@@ -130,7 +130,12 @@
     background:#fff; border:1px solid #D9CBE2; border-radius:10px;
     box-shadow:0 8px 24px rgba(20,10,30,0.15); padding:10px; width:280px;
   }
-  .venue-checkbox-list{ max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+  .venue-picker-section-label{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--vv-gray-mid); margin:4px 2px 4px;
+  }
+  .venue-checkbox-list{ max-height:170px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+  #venue-ship-list{ max-height:none; }
   .venue-checkbox-item{
     display:flex; align-items:center; gap:8px; font-size:13px; padding:5px 6px;
     border-radius:6px; cursor:pointer;
@@ -308,6 +313,9 @@
       <div class="venue-multi-wrap">
         <button type="button" class="venue-multi-toggle" id="venue-multi-toggle">Select venue(s)…</button>
         <div class="venue-multi-panel" id="venue-multi-panel" style="display:none;">
+          <div class="venue-picker-section-label">Ship</div>
+          <div class="venue-checkbox-list" id="venue-ship-list"></div>
+          <div class="venue-picker-section-label">Station(s)</div>
           <div class="venue-checkbox-list" id="venue-checkbox-list"></div>
           <div class="venue-multi-actions">
             <button type="button" class="btn-submit" id="venue-multi-apply">Open</button>
@@ -440,8 +448,11 @@
   var STORAGE_KEY = "vv-venue-handovers-v1";
   var ADMIN_KEY = "vv-admin-mode";
 
+  // The fleet — picked first, before the station(s).
+  var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
+
   // Venue/station list — pulled from Station_Budget_proposal.xlsx ("By Location").
-  // One ship, each entry below is a station/outlet on it.
+  // Same station list applies on every ship.
   var STATIONS = [
     "Culinary Leadership", "Culinary Leadership Night", "Extra Virgin", "The Wake", "The Wake Night",
     "Test Kitchen", "Razzle Dazzle", "Razzle Dazzle Night", "Pink Agave", "Gunbae", "The Dock",
@@ -718,22 +729,46 @@
   })();
 
   // ---------------------------------------------------------------
-  // Multi-venue picker — a leader covering several stations checks all of
-  // them; the combined selection becomes one handover whose key is the
-  // sorted, "+"-joined list of station slugs (e.g. "razzle-dazzle+the-wake").
+  // Venue picker — ship first (one), then station(s) on it (one or more).
+  // Key format: "<ship-slug>__<station-slug>[+<station-slug>...]"
+  // e.g. "scarlet-lady__razzle-dazzle+the-wake"
   // ---------------------------------------------------------------
-  function slugToLabel(slug){
-    var found = STATIONS.filter(function(n){ return slugify(n) === slug; })[0];
+  function slugToLabel(slug, list){
+    var found = list.filter(function(n){ return slugify(n) === slug; })[0];
     return found || slug;
   }
-  function venueKeyToLabels(key){
-    return key ? key.split("+").map(slugToLabel) : [];
+  function parseVenueKey(key){
+    if (!key) return { ship: "", stationSlugs: [] };
+    var parts = key.split("__");
+    return { ship: parts[0] || "", stationSlugs: parts[1] ? parts[1].split("+") : [] };
   }
-  function labelsToVenueKey(labels){
-    return labels.map(slugify).sort().join("+");
+  function venueKeyToShipLabel(key){
+    var p = parseVenueKey(key);
+    return p.ship ? slugToLabel(p.ship, SHIPS) : "";
+  }
+  function venueKeyToStationLabels(key){
+    var p = parseVenueKey(key);
+    return p.stationSlugs.map(function(s){ return slugToLabel(s, STATIONS); });
+  }
+  function venueKeyDisplay(key){
+    var shipLabel = venueKeyToShipLabel(key);
+    var stationLabels = venueKeyToStationLabels(key);
+    if (!shipLabel) return "";
+    return stationLabels.length ? shipLabel + " — " + stationLabels.join(" + ") : shipLabel;
+  }
+  function buildVenueKey(shipSlug, stationSlugs){
+    return shipSlug + "__" + stationSlugs.slice().sort().join("+");
   }
 
   (function initVenuePicker(){
+    var shipList = document.getElementById("venue-ship-list");
+    SHIPS.forEach(function(name){
+      var label = document.createElement("label");
+      label.className = "venue-checkbox-item";
+      label.innerHTML = '<input type="radio" name="venue-ship-radio" value="' + slugify(name) + '"> ' + escapeHtml(name);
+      shipList.appendChild(label);
+    });
+
     var list = document.getElementById("venue-checkbox-list");
     STATIONS.forEach(function(name){
       var label = document.createElement("label");
@@ -746,10 +781,13 @@
     var panel = document.getElementById("venue-multi-panel");
 
     function openPanel(){
-      // Re-sync checkboxes to the currently open venue every time it's opened.
-      var checked = venueKeyToLabels(currentVenueKey).map(slugify);
+      // Re-sync selections to the currently open venue every time it's opened.
+      var p = parseVenueKey(currentVenueKey);
+      shipList.querySelectorAll('input[type="radio"]').forEach(function(rb){
+        rb.checked = rb.value === p.ship;
+      });
       list.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
-        cb.checked = checked.indexOf(cb.value) !== -1;
+        cb.checked = p.stationSlugs.indexOf(cb.value) !== -1;
       });
       panel.style.display = "block";
     }
@@ -764,26 +802,34 @@
     });
 
     document.getElementById("venue-multi-apply").addEventListener("click", function(){
-      var checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(function(cb){ return cb.value; });
+      var shipChecked = shipList.querySelector('input[type="radio"]:checked');
+      var stationsChecked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(function(cb){ return cb.value; });
+      if (!shipChecked){
+        window.alert("Pick a ship first.");
+        return;
+      }
+      if (stationsChecked.length === 0){
+        window.alert("Pick at least one station.");
+        return;
+      }
       closePanel();
-      if (checked.length === 0) return;
-      window.location.hash = "handover?v=" + encodeURIComponent(checked.sort().join("+"));
+      window.location.hash = "handover?v=" + encodeURIComponent(buildVenueKey(shipChecked.value, stationsChecked));
     });
     document.getElementById("venue-multi-cancel").addEventListener("click", closePanel);
   })();
 
   function updateVenueToggleLabel(venueKey){
     var toggle = document.getElementById("venue-multi-toggle");
-    var labels = venueKeyToLabels(venueKey);
-    toggle.textContent = labels.length ? labels.join(" + ") : "Select venue(s)…";
+    var display = venueKeyDisplay(venueKey);
+    toggle.textContent = display || "Select venue(s)…";
   }
 
   function applyRecordToForm(venueKey, rec){
     updateVenueToggleLabel(venueKey);
 
-    // Pre-fill the display name from the selected station(s) if the chef
+    // Pre-fill the display name from ship + selected station(s) if the chef
     // hasn't typed their own name for it yet — still fully editable.
-    var joinedLabel = venueKeyToLabels(venueKey).join(" + ");
+    var joinedLabel = venueKeyDisplay(venueKey);
     var shipValue = rec.ship || joinedLabel;
 
     document.getElementById("f-ship").value = shipValue;
