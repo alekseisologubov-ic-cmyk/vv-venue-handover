@@ -112,6 +112,7 @@
   }
   .status-badge.draft{ background:#EDE6F2; color:var(--vv-squid-ink); }
   .status-badge.submitted{ background:#E3F5E8; color:#1E7A3A; }
+  .status-badge.deleted{ background:#EDEDED; color:#6B6B6B; }
   .admin-flag{ font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--vv-red-deep); }
 
   .venue-picker{ display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
@@ -245,6 +246,13 @@
   }
   .list-row-delete:hover{ background:var(--vv-red); border-color:var(--vv-red); color:#fff; }
   .list-row-delete:disabled{ opacity:0.6; cursor:default; }
+  .list-row-restore{
+    border:1px solid #BEE3C8; background:#fff; color:#1E7A3A;
+    font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
+    border-radius:20px; padding:5px 12px; cursor:pointer;
+  }
+  .list-row-restore:hover{ background:#1E7A3A; border-color:#1E7A3A; color:#fff; }
+  .list-row-restore:disabled{ opacity:0.6; cursor:default; }
 
   .status-toast{
     position:fixed; bottom:16px; right:16px; background:var(--vv-near-black); color:#fff;
@@ -536,6 +544,7 @@
       fields: Object.assign(emptyFields(), row.fields || {}),
       status: row.status || "draft",
       submittedAt: row.submitted_at || null,
+      deletedAt: row.deleted_at || null,
       attachments: row.attachments || [],
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     };
@@ -550,6 +559,7 @@
       fields: rec.fields || emptyFields(),
       status: rec.status || "draft",
       submitted_at: rec.submittedAt || null,
+      deleted_at: rec.deletedAt || null,
       attachments: rec.attachments || [],
       updated_at: new Date().toISOString(),
     };
@@ -579,34 +589,32 @@
     localSaveAll(all);
   }
 
-  // Delete one venue's record entirely — admin-only action, used from the
-  // "Manage Venues" list and from the handover page itself.
-  async function deleteRecord(venueKey){
+  // Soft delete — admin-only. Marks the record as deleted (deletedAt set)
+  // without actually removing it or its files, so it can be restored later.
+  // It just disappears from every normal list (Draft/Submitted); only the
+  // admin "Manage Venues" view (includeDeleted=true) still shows it, with a
+  // Restore option instead of Delete.
+  async function softDeleteRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
-
-    if (SUPABASE_CONFIGURED){
-      var res = await sb.from("handovers").delete().eq("id", venueKey);
-      if (res.error){ console.error(res.error); return false; }
-      // Best-effort cleanup of any attached files; a record with no files
-      // skips this harmlessly.
-      var paths = (rec.attachments || []).map(function(a){ return a.path; }).filter(Boolean);
-      if (paths.length > 0){
-        var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove(paths);
-        if (del.error) console.error(del.error);
-      }
-      return true;
-    }
-    var all = localLoadAll();
-    delete all[venueKey];
-    localSaveAll(all);
+    rec.deletedAt = Date.now();
+    await saveRecord(venueKey, rec);
+    return true;
+  }
+  async function restoreRecord(venueKey){
+    var rec = await fetchHandoverRecord(venueKey);
+    rec.deletedAt = null;
+    await saveRecord(venueKey, rec);
     return true;
   }
 
-  // List records, optionally filtered by status ("draft" | "submitted" | null for all).
-  async function listRecords(statusFilter){
+  // List records, optionally filtered by status ("draft" | "submitted" | null
+  // for any status). Deleted records are hidden unless includeDeleted is true
+  // (only the admin "Manage Venues" view passes true).
+  async function listRecords(statusFilter, includeDeleted){
     if (SUPABASE_CONFIGURED){
       var query = sb.from("handovers").select("*").order("updated_at", { ascending: false });
       if (statusFilter) query = query.eq("status", statusFilter);
+      if (!includeDeleted) query = query.is("deleted_at", null);
       var res = await query;
       if (res.error){ console.error(res.error); return []; }
       return (res.data || []).map(function(row){
@@ -619,6 +627,7 @@
     return Object.keys(all)
       .map(function(k){ var rec = Object.assign({}, all[k]); rec.venueKey = k; return rec; })
       .filter(function(r){ return !statusFilter || r.status === statusFilter; })
+      .filter(function(r){ return includeDeleted || !r.deletedAt; })
       .sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
   }
 
@@ -628,7 +637,7 @@
     return out;
   }
   function emptyRecord(){
-    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, attachments:[], updatedAt:Date.now() };
+    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, deletedAt:null, attachments:[], updatedAt:Date.now() };
   }
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
@@ -927,7 +936,10 @@
       lockedNote.style.display = "none";
     }
 
-    document.getElementById("btn-delete-handover").style.display = admin ? "inline-block" : "none";
+    var deleteBtn = document.getElementById("btn-delete-handover");
+    deleteBtn.style.display = admin ? "inline-block" : "none";
+    deleteBtn.textContent = rec.deletedAt ? "Restore handover" : "Delete handover";
+    deleteBtn.className = rec.deletedAt ? "list-row-restore" : "list-row-delete";
 
     currentAttachments = rec.attachments || [];
     renderFileListUI(currentAttachments, locked);
@@ -1188,12 +1200,21 @@
     renderHandover(currentVenueKey);
   });
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
-    var label = venueKeyDisplay(currentVenueKey) || currentVenueKey;
-    if (!window.confirm('Delete the handover for "' + label + '"? This can\u2019t be undone.')) return;
     var btn = document.getElementById("btn-delete-handover");
+    var label = venueKeyDisplay(currentVenueKey) || currentVenueKey;
+    var isCurrentlyDeleted = btn.textContent.indexOf("Restore") === 0;
+
+    if (isCurrentlyDeleted){
+      btn.disabled = true;
+      btn.textContent = "Restoring…";
+      await restoreRecord(currentVenueKey);
+      renderHandover(currentVenueKey);
+      return;
+    }
+    if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
     btn.disabled = true;
     btn.textContent = "Deleting…";
-    await deleteRecord(currentVenueKey);
+    await softDeleteRecord(currentVenueKey);
     window.location.hash = "home";
   });
   document.getElementById("handover-back").addEventListener("click", function(){
@@ -1232,7 +1253,9 @@
 
     listEl.innerHTML = '<p class="list-empty">Loading…</p>';
     var statusFilter = showingAll ? null : showingDraft ? "draft" : "submitted";
-    var rows = await listRecords(statusFilter);
+    // Only the admin "Manage Venues" (all) view surfaces deleted records —
+    // everywhere else, a deleted handover should simply not exist.
+    var rows = await listRecords(statusFilter, showingAll);
     listEl.innerHTML = "";
 
     if (rows.length === 0){
@@ -1241,6 +1264,7 @@
     }
 
     rows.forEach(function(r){
+      var isDeleted = !!r.deletedAt;
       var row = document.createElement("div");
       row.className = "list-row";
       row.tabIndex = 0;
@@ -1250,9 +1274,13 @@
           '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
         '</div>' +
         '<div class="list-row-right">' +
-          '<span class="status-badge ' + (r.status === "submitted" ? "submitted" : "draft") + '">' + (r.status === "submitted" ? "Submitted" : "Draft") + '</span>' +
+          '<span class="status-badge ' + (isDeleted ? "deleted" : r.status === "submitted" ? "submitted" : "draft") + '">' +
+            (isDeleted ? "Deleted" : r.status === "submitted" ? "Submitted" : "Draft") +
+          '</span>' +
           '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
-          (admin ? '<button type="button" class="list-row-delete">Delete</button>' : '') +
+          (admin ? (isDeleted
+            ? '<button type="button" class="list-row-restore">Restore</button>'
+            : '<button type="button" class="list-row-delete">Delete</button>') : '') +
         '</div>';
 
       function goToRow(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
@@ -1260,16 +1288,27 @@
       row.addEventListener("keydown", function(e){ if (e.key === "Enter") goToRow(); });
 
       if (admin){
-        var delBtn = row.querySelector(".list-row-delete");
-        delBtn.addEventListener("click", async function(e){
-          e.stopPropagation();
-          var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
-          if (!window.confirm('Delete the handover for "' + label + '"? This can\u2019t be undone.')) return;
-          delBtn.disabled = true;
-          delBtn.textContent = "Deleting…";
-          await deleteRecord(r.venueKey);
-          renderSubmitted(filter);
-        });
+        var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
+        if (isDeleted){
+          var restoreBtn = row.querySelector(".list-row-restore");
+          restoreBtn.addEventListener("click", async function(e){
+            e.stopPropagation();
+            restoreBtn.disabled = true;
+            restoreBtn.textContent = "Restoring…";
+            await restoreRecord(r.venueKey);
+            renderSubmitted(filter);
+          });
+        } else {
+          var delBtn = row.querySelector(".list-row-delete");
+          delBtn.addEventListener("click", async function(e){
+            e.stopPropagation();
+            if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
+            delBtn.disabled = true;
+            delBtn.textContent = "Deleting…";
+            await softDeleteRecord(r.venueKey);
+            renderSubmitted(filter);
+          });
+        }
       }
       listEl.appendChild(row);
     });
