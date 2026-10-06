@@ -399,7 +399,7 @@
         <div class="ship-field"><label>Lady Ship / Venue</label><input id="f-ship" placeholder="Enter ship and venue name"></div>
         <div class="ship-field"><label>Outgoing Chef (Name / Position)</label><input id="f-outgoing" placeholder="—"></div>
         <div class="ship-field"><label>Incoming Chef (Name / Position)</label><input id="f-incoming" placeholder="—"></div>
-        <div class="ship-field"><label>Date</label><input id="f-date" placeholder="M/D/Y"></div>
+        <div class="ship-field"><label>Date</label><input type="date" id="f-date"></div>
       </section>
 
       <section class="attachments-card">
@@ -709,6 +709,16 @@
   function emptyRecord(){
     return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
   }
+  // The date field is a native <input type="date">, whose value is always
+  // "YYYY-MM-DD" — this turns that into a friendlier display string wherever
+  // the date is shown as plain text (e.g. the footer).
+  function formatDateDisplay(isoDate){
+    if (!isoDate) return "";
+    var d = new Date(isoDate + "T00:00:00");
+    if (isNaN(d.getTime())) return isoDate; // fall back to raw value if unparsable
+    return d.toLocaleDateString();
+  }
+
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
   }
@@ -988,7 +998,7 @@
     document.getElementById("f-outgoing").value = rec.outgoing || "";
     document.getElementById("f-incoming").value = rec.incoming || "";
     document.getElementById("f-date").value = rec.date || "";
-    document.getElementById("footer-date").textContent = rec.date || "—";
+    document.getElementById("footer-date").textContent = formatDateDisplay(rec.date) || "—";
     document.getElementById("handover-title").textContent = shipValue || "Venue Handover";
 
     document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
@@ -1392,7 +1402,7 @@
     }
 
     currentAttachments = attachments;
-    document.getElementById("footer-date").textContent = next.date || "—";
+    document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
     document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
     renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
     setSyncStatus("live");
