@@ -1127,7 +1127,16 @@
   // browser tab; anything else (Word/Excel/CSV) can't be previewed inline by
   // the browser, so that case just offers the "Open in new tab" link.
   // ---------------------------------------------------------------
-  function openAttachmentModal(a){
+  var currentObjectUrl = null; // tracked so it can be revoked (avoids a memory leak)
+
+  function revokeCurrentObjectUrl(){
+    if (currentObjectUrl){
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = null;
+    }
+  }
+
+  async function openAttachmentModal(a){
     var modal = document.getElementById("attachment-modal");
     var body = document.getElementById("attachment-modal-body");
     var nameEl = document.getElementById("attachment-modal-name");
@@ -1135,17 +1144,39 @@
 
     nameEl.textContent = a.name || "Attachment";
     newTabLink.href = a.url;
-    body.innerHTML = "";
+    revokeCurrentObjectUrl();
+    body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Loading…</span>';
+    modal.style.display = "flex";
 
     var type = a.type || "";
+    var previewable = type.indexOf("image/") === 0 || type === "application/pdf";
+
+    var src = a.url;
+    if (previewable){
+      // Load as a blob and hand the browser a local object URL instead of the
+      // original one — this makes the browser treat it purely as the file's
+      // own MIME type and render it inline, regardless of any "download this"
+      // response header the original URL's server might send.
+      try{
+        var res = await fetch(a.url);
+        var blob = await res.blob();
+        src = URL.createObjectURL(blob);
+        currentObjectUrl = src;
+      }catch(e){
+        console.error("Couldn't fetch attachment for inline preview:", e);
+        // fall back to the direct URL — still usually renders fine
+      }
+    }
+
+    body.innerHTML = "";
     if (type.indexOf("image/") === 0){
       var img = document.createElement("img");
-      img.src = a.url;
+      img.src = src;
       img.alt = a.name || "";
       body.appendChild(img);
     } else if (type === "application/pdf"){
       var iframe = document.createElement("iframe");
-      iframe.src = a.url;
+      iframe.src = src;
       body.appendChild(iframe);
     } else {
       var msg = document.createElement("div");
@@ -1153,11 +1184,11 @@
       msg.textContent = "This file type can't be previewed here — use \"Open in new tab\" above.";
       body.appendChild(msg);
     }
-    modal.style.display = "flex";
   }
   function closeAttachmentModal(){
     document.getElementById("attachment-modal").style.display = "none";
     document.getElementById("attachment-modal-body").innerHTML = ""; // stop any PDF/video from playing in the background
+    revokeCurrentObjectUrl();
   }
   document.getElementById("attachment-modal-close").addEventListener("click", closeAttachmentModal);
   document.getElementById("attachment-modal-backdrop").addEventListener("click", closeAttachmentModal);
