@@ -106,6 +106,8 @@
   .dot{ width:8px;height:8px;border-radius:50%; display:inline-block; }
   .dot.live{ background:#2E9E4F; }
   .dot.off{ background:#B0B0B0; }
+  .dot.saving{ background:#E1A50A; }
+  .dot.error{ background:var(--vv-red); }
   .status-badge{
     display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase;
     padding:3px 10px; border-radius:20px;
@@ -578,15 +580,19 @@
   }
 
   // Save one venue's record (full upsert).
+  // Returns true on success, false on failure (and logs the error either way
+  // a caller cares to check it) — so a failed write can actually be shown to
+  // the person instead of only appearing in the browser console.
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
       var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
-      if (res.error) console.error(res.error);
-      return;
+      if (res.error){ console.error(res.error); return false; }
+      return true;
     }
     var all = localLoadAll();
     all[venueKey] = rec;
     localSaveAll(all);
+    return true;
   }
 
   // Soft delete — admin-only. Marks the record as deleted (deletedAt set)
@@ -596,7 +602,7 @@
   // Restore option instead of Delete.
   async function softDeleteRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
-    rec.deletedAt = Date.now();
+    rec.deletedAt = new Date().toISOString();
     await saveRecord(venueKey, rec);
     return true;
   }
@@ -1048,13 +1054,15 @@
 
   var syncDot = null, syncLabel = null;
   function setSyncStatus(mode){
-    // mode: "off" | "live" | "saving"
+    // mode: "off" | "live" | "saving" | "error"
     if (!syncDot) syncDot = document.querySelector(".sync-bar .dot");
     if (!syncLabel) syncLabel = document.getElementById("sync-label");
     if (!syncDot) return;
-    syncDot.className = "dot " + (mode === "saving" ? "saving" : mode === "live" ? "live" : "off");
+    syncDot.className = "dot " + (mode === "error" ? "error" : mode === "saving" ? "saving" : mode === "live" ? "live" : "off");
     if (syncLabel){
-      syncLabel.textContent = SUPABASE_CONFIGURED
+      syncLabel.textContent = mode === "error"
+        ? "Couldn't save — check your connection"
+        : SUPABASE_CONFIGURED
         ? (mode === "saving" ? "Saving…" : "Synced — live for anyone with this venue link")
         : "Saved on this device";
     }
@@ -1166,7 +1174,13 @@
 
     var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
     if (SUPABASE_CONFIGURED) skipNextRealtime = true; // our own write — don't re-apply it via the subscription
-    await saveRecord(venueKey, next);
+    var ok = await saveRecord(venueKey, next);
+
+    if (!ok){
+      setSyncStatus("error");
+      showToast("Couldn't save — check your connection and try again");
+      return next;
+    }
 
     currentAttachments = attachments;
     document.getElementById("footer-date").textContent = next.date || "—";
@@ -1191,7 +1205,10 @@
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
-    var now = Date.now();
+    // Must be an ISO string, not a raw number — the Supabase column is
+    // timestamptz, and a bare epoch number gets rejected by PostgREST,
+    // which silently fails the *entire* save (status included).
+    var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
     renderHandover(currentVenueKey);
   });
