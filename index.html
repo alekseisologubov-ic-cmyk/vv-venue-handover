@@ -1,1 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Venue Handover · Virgin Voyages</title>
+<style>
+  :root{
+    --vv-squid-ink:#3C1053;
+    --vv-squid-ink-light:#4F2864;
+    --vv-squid-ink-stripe:#461D5C;
+    --vv-red:#E10A0A;
+    --vv-red-light:#E63636;
+    --vv-red-deep:#CC0000;
+    --vv-near-black:#1B1B1B;
+    --vv-charcoal-texture:#252525;
+    --vv-white:#FFFFFF;
+    --vv-ink:#000000;
+    --vv-gray-mid:#6B6B6B;
+    --vv-body-text:#333333;
+    --vv-bg:#F5F1F7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--vv-bg);
+    font-family: Calibri, Arial, sans-serif;
+    color:var(--vv-body-text);
+    min-height:100%;
+  }
 
+  .stripe-dark{
+    background-color:var(--vv-squid-ink);
+    background-image:repeating-linear-gradient(45deg,
+      var(--vv-squid-ink) 0px, var(--vv-squid-ink) 40px,
+      var(--vv-squid-ink-stripe) 40px, var(--vv-squid-ink-stripe) 80px);
+  }
+  .stripe-black{
+    background-color:var(--vv-near-black);
+    background-image:repeating-linear-gradient(45deg,
+      var(--vv-near-black) 0px, var(--vv-near-black) 40px,
+      var(--vv-charcoal-texture) 40px, var(--vv-charcoal-texture) 80px);
+  }
+
+  header.band{ color:#fff; padding:28px 24px 26px; }
+  .band-inner{ max-width:1080px;margin:0 auto; }
+  .eyebrow{
+    display:flex; align-items:center; gap:8px;
+    font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+    font-size:12px; color:#FFD1D1; margin-bottom:6px;
+  }
+  .eyebrow .dash{ color:var(--vv-red); font-weight:900; }
+  h1.title{
+    font-family: Poppins, 'Segoe UI', Arial, sans-serif;
+    font-weight:800;
+    font-size:clamp(28px,5vw,42px);
+    margin:0;
+    line-height:1.05;
+  }
+  .subtitle{ margin:8px 0 0; font-size:15px; color:#E7D9EE; }
+  .back-link{
+    display:inline-block; color:#E7D9EE; font-size:12.5px;
+    text-decoration:none; margin-bottom:10px; opacity:0.85; cursor:pointer; background:none; border:none; padding:0; font-family:inherit;
+  }
+  .back-link:hover{ opacity:1; text-decoration:underline; }
+  .pill{
+    display:inline-block; background:var(--vv-red); color:#fff; font-weight:700;
+    font-size:11px; letter-spacing:0.08em; text-transform:uppercase;
+    padding:4px 10px; border-radius:20px;
+  }
+
+  main{max-width:1080px;margin:0 auto;padding:22px 16px 60px;}
+  .home-main{max-width:1120px;margin:0 auto;padding:36px 24px 60px;}
+
+  /* ---- home dashboard ---- */
+  .nav-grid{ display:grid; grid-template-columns:repeat(2, minmax(260px, 1fr)); gap:24px; }
+  @media (max-width:720px){ .nav-grid{ grid-template-columns:1fr; } }
+  .nav-card{
+    background:var(--vv-white); border:none; border-radius:10px; text-align:left;
+    padding:28px 30px; cursor:pointer; box-shadow:0 1px 3px rgba(20,10,30,0.08);
+    display:flex; flex-direction:column; gap:10px; min-height:120px;
+    transition:box-shadow 0.15s ease, transform 0.15s ease; font-family:inherit; width:100%;
+  }
+  .nav-card:hover{ box-shadow:0 6px 16px rgba(60,16,83,0.14); transform:translateY(-1px); }
+  .nav-card-title{
+    font-family: Poppins, 'Segoe UI', Arial, sans-serif; font-weight:800; font-size:17px;
+    color:var(--vv-squid-ink); text-transform:uppercase;
+  }
+  .nav-card-desc{ font-size:14.5px; color:var(--vv-gray-mid); line-height:1.5; }
+  .admin-pill{
+    display:inline-block; margin-top:32px; float:right; clear:both; border:none; border-radius:8px;
+    padding:13px 26px; font-family: Poppins, 'Segoe UI', Arial, sans-serif; font-weight:800;
+    font-size:13px; letter-spacing:0.04em; text-transform:uppercase; cursor:pointer;
+    box-shadow:0 2px 8px rgba(20,10,30,0.12);
+  }
+  .admin-pill.on{ background:var(--vv-red); color:#fff; }
+  .admin-pill.off{ background:#fff; color:var(--vv-gray-mid); border:1px solid #D9CBE2; }
+
+  /* ---- status + sync ---- */
+  .sync-bar{ display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--vv-gray-mid); margin-bottom:14px; flex-wrap:wrap; }
+  .dot{ width:8px;height:8px;border-radius:50%; display:inline-block; }
+  .dot.live{ background:#2E9E4F; }
+  .dot.off{ background:#B0B0B0; }
+  .status-badge{
+    display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase;
+    padding:3px 10px; border-radius:20px;
+  }
+  .status-badge.draft{ background:#EDE6F2; color:var(--vv-squid-ink); }
+  .status-badge.submitted{ background:#E3F5E8; color:#1E7A3A; }
+  .admin-flag{ font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--vv-red-deep); }
+
+  .venue-picker{ display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .venue-picker-label{ font-size:12px; color:var(--vv-gray-mid); text-transform:uppercase; letter-spacing:0.05em; }
+  .venue-picker input{ border:1px solid #D9CBE2; border-radius:20px; padding:6px 14px; font-size:13px; font-family:inherit; }
+  .venue-picker button{ border:none; background:var(--vv-squid-ink); color:#fff; border-radius:20px; padding:7px 16px; font-size:13px; font-weight:700; cursor:pointer; }
+  .venue-picker button:hover{ background:var(--vv-squid-ink-light); }
+  .btn-submit{ border:none; background:var(--vv-red); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-submit:hover{ background:var(--vv-red-light); }
+  .btn-outline{ border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .locked-note{ font-size:12.5px; color:var(--vv-gray-mid); }
+
+  /* ---- ship info card ---- */
+  .ship-card{
+    background:var(--vv-white); border-top:3px solid var(--vv-red); border-radius:10px;
+    padding:18px 20px; margin-bottom:22px; box-shadow:0 2px 10px rgba(60,16,83,0.08);
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px;
+  }
+  .ship-field label{ display:block; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; font-size:11px; color:var(--vv-squid-ink); margin-bottom:6px; }
+  .ship-field input{ width:100%; border:none; border-bottom:2px solid #E3D8EA; background:transparent; font-size:15px; padding:4px 2px 6px; font-family:inherit; color:inherit; }
+  .ship-field input:focus{ outline:none; border-bottom-color:var(--vv-red); }
+
+  /* ---- sections + cards ---- */
+  .section-wrap{ margin-bottom:28px; }
+  .section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
+  .section-num{ font-family: Poppins, 'Segoe UI', Arial, sans-serif; font-weight:800; font-size:30px; color:var(--vv-red-deep); line-height:1; min-width:44px; }
+  .section-title{ font-family: Poppins, 'Segoe UI', Arial, sans-serif; font-weight:800; font-size:19px; color:var(--vv-ink); text-transform:uppercase; }
+  .section-rule{ border:none;border-top:1px solid #000; opacity:0.15; margin:0 0 14px; }
+  .cards-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:14px; }
+  .card{ background:var(--vv-white); border-radius:10px; padding:16px 18px 18px; box-shadow:0 2px 10px rgba(60,16,83,0.07); display:flex; flex-direction:column; }
+  .card.alt{ border-top:3px solid var(--vv-squid-ink); }
+  .card.main{ border-top:3px solid var(--vv-red); }
+  .field-label{ font-weight:700; text-transform:uppercase; letter-spacing:0.06em; font-size:11.5px; color:var(--vv-squid-ink); margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+  .field-label .dash{ color:var(--vv-red); font-weight:900; }
+  textarea{ width:100%; min-height:72px; resize:vertical; border:1px solid #E3D8EA; border-radius:6px; padding:8px 10px; font-family:inherit; font-size:14px; color:inherit; background:#FBFAFC; flex:1; }
+  textarea:focus{ outline:none; border-color:var(--vv-red); }
+  fieldset{ border:none; padding:0; margin:0; }
+  fieldset:disabled textarea, fieldset:disabled input{ background:#F2EFF4; color:#8a8a8a; }
+
+  .callout{ color:#fff; border-radius:10px; padding:20px 22px; margin:28px 0; }
+  .callout .eyebrow2{ font-weight:700;letter-spacing:0.08em;text-transform:uppercase;font-size:12px;color:#FFBABA;margin-bottom:8px; }
+  .callout .eyebrow2 .dash{color:#fff;}
+  .callout p{margin:0; font-size:14.5px; line-height:1.6; color:#F0E9F4;}
+
+  footer.band{ color:#fff; font-size:11px; letter-spacing:0.05em; padding:14px 24px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  footer.band .left .pill{margin-right:8px;}
+  footer.band .right{text-transform:uppercase; color:#C9C9C9; text-align:right;}
+
+  /* ---- submitted / manage list ---- */
+  .config-banner{ background:#FFF3CD; color:#664D03; border:1px solid #FFE69C; border-radius:8px; padding:14px 18px; margin-bottom:16px; font-size:14px; }
+  .list-card{ background:var(--vv-white); border-radius:10px; box-shadow:0 1px 3px rgba(20,10,30,0.08); overflow:hidden; }
+  .list-empty{ padding:24px 28px; color:var(--vv-gray-mid); font-size:14px; margin:0; }
+  .list-row{ display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid #EFE8F2; text-decoration:none; color:inherit; cursor:pointer; background:none; border-left:none; border-right:none; border-top:none; width:100%; text-align:left; font-family:inherit; }
+  .list-row:last-child{ border-bottom:none; }
+  .list-row:hover{ background:#FAF7FB; }
+  .list-row-title{ font-weight:700; color:var(--vv-ink); font-size:15px; }
+  .list-row-sub{ font-size:13px; color:var(--vv-gray-mid); margin-top:3px; }
+  .list-row-right{ display:flex; align-items:center; gap:12px; }
+  .list-row-date{ font-size:12.5px; color:var(--vv-gray-mid); min-width:80px; text-align:right; }
+
+  .status-toast{
+    position:fixed; bottom:16px; right:16px; background:var(--vv-near-black); color:#fff;
+    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none;
+  }
+  .status-toast.show{opacity:0.92;}
+
+  [data-view]{ display:none; }
+  [data-view].active{ display:block; }
+
+  @media (max-width:640px){ .band-inner{align-items:flex-start;} }
+</style>
+</head>
+<body>
+
+<!-- ============ HOME ============ -->
+<div data-view="home">
+  <header class="band stripe-dark">
+    <div class="band-inner">
+      <div class="eyebrow"><span class="dash">—</span> VIRGIN VOYAGES</div>
+      <h1 class="title">Venue Handover</h1>
+      <p class="subtitle">Create, review and manage venue handovers.</p>
+    </div>
+  </header>
+  <main class="home-main">
+    <div class="nav-grid">
+      <button class="nav-card" id="btn-create">
+        <span class="nav-card-title">Create Handover</span>
+        <span class="nav-card-desc">Start a new venue handover.</span>
+      </button>
+      <button class="nav-card" id="btn-open">
+        <span class="nav-card-title">Open Handovers</span>
+        <span class="nav-card-desc">Continue handovers that have been started but not submitted.</span>
+      </button>
+      <button class="nav-card" id="btn-submitted">
+        <span class="nav-card-title">Submitted Handovers</span>
+        <span class="nav-card-desc">Review completed handovers and flagged follow-up points.</span>
+      </button>
+      <button class="nav-card" id="btn-manage">
+        <span class="nav-card-title">Manage Venues</span>
+        <span class="nav-card-desc" id="manage-desc">Enable admin mode below to browse and reopen all venues.</span>
+      </button>
+    </div>
+    <button class="admin-pill off" id="btn-admin-toggle">Admin mode off</button>
+  </main>
+</div>
+
+<!-- ============ HANDOVER FORM ============ -->
+<div data-view="handover">
+  <div class="home-main" style="padding-bottom:0;" id="handover-config-banner-wrap"></div>
+  <header class="band stripe-dark">
+    <div class="band-inner">
+      <button class="back-link" id="handover-back">← Venue Handover home</button>
+      <div class="eyebrow"><span class="dash">—</span> VIRGIN VOYAGES</div>
+      <h1 class="title" id="handover-title">Venue Handover</h1>
+      <p class="subtitle">Galley &amp; venue operations · shift change record.</p>
+    </div>
+  </header>
+  <main>
+    <div class="sync-bar">
+      <span class="dot live"></span>
+      <span>Saved on this device</span>
+      <span class="status-badge draft" id="handover-status-badge">Draft</span>
+      <span class="admin-flag" id="handover-admin-flag" style="display:none;">Admin mode</span>
+    </div>
+
+    <div class="venue-picker">
+      <span class="venue-picker-label">Venue / outlet code:</span>
+      <input id="venue-code-input" placeholder="e.g. razzle-dazzle-resilient-lady">
+      <button id="venue-code-open">Open</button>
+      <span style="flex:1"></span>
+      <button class="btn-submit" id="btn-submit-handover">Submit handover</button>
+      <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
+      <span class="locked-note" id="locked-note" style="display:none;"></span>
+    </div>
+
+    <fieldset id="handover-fieldset">
+      <section class="ship-card">
+        <div class="ship-field"><label>Lady Ship / Venue</label><input id="f-ship" placeholder="Enter ship and venue name"></div>
+        <div class="ship-field"><label>Outgoing Chef (Name / Position)</label><input id="f-outgoing" placeholder="—"></div>
+        <div class="ship-field"><label>Incoming Chef (Name / Position)</label><input id="f-incoming" placeholder="—"></div>
+        <div class="ship-field"><label>Date</label><input id="f-date" placeholder="M/D/Y"></div>
+      </section>
+
+      <div id="sections-top"></div>
+
+      <div class="callout stripe-black">
+        <div class="eyebrow2"><span class="dash">—</span> READ THIS TWICE</div>
+        <p>A handover is only as good as what the incoming chef can act on without you in the room. Flag anything safety, compliance, or stock-critical here — don't let it get buried below.</p>
+      </div>
+
+      <div id="sections-bottom"></div>
+    </fieldset>
+  </main>
+  <footer class="band stripe-black">
+    <div class="left"><span class="pill">Confidential</span><span>Internal use only — not for distribution</span></div>
+    <div class="right">Venue Handover · Galley Operations · <span id="footer-date">—</span></div>
+  </footer>
+</div>
+
+<!-- ============ SUBMITTED / MANAGE LIST ============ -->
+<div data-view="submitted">
+  <header class="band stripe-dark">
+    <div class="band-inner">
+      <button class="back-link" id="submitted-back">← Venue Handover home</button>
+      <div class="eyebrow"><span class="dash">—</span> VIRGIN VOYAGES</div>
+      <h1 class="title" id="submitted-title">Submitted Handovers</h1>
+      <p class="subtitle" id="submitted-subtitle">Completed handovers and their follow-up points.</p>
+    </div>
+  </header>
+  <main class="home-main">
+    <div class="config-banner" id="submitted-blocked-banner" style="display:none;">
+      Admin mode is off, so draft venues are hidden here. Turn on admin mode from the home screen to browse everything.
+    </div>
+    <div class="list-card" id="submitted-list"></div>
+  </main>
+</div>
+
+<div class="status-toast" id="toast">Saved</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------------------------------------------------------
+  // Field schema — single source of truth, mirrors the hosted app
+  // ---------------------------------------------------------------
+  var SECTIONS = [
+    { num:"01", title:"Operational Overview", fields:[
+      {id:"opoverview", label:"Current Operational Overview"},
+      {id:"hours", label:"Operating Hours (Sea Days / Port Days)"},
+      {id:"treat", label:"Treat Yourself Items"},
+      {id:"challenges", label:"Current Challenges"} ]},
+    { num:"02", title:"Manning & Structure", fields:[
+      {id:"manning", label:"Current Team Manning"},
+      {id:"keypos", label:"Key Positions"},
+      {id:"recipe", label:"Recipe Training Status"},
+      {id:"perfnotes", label:"Performance Notes"},
+      {id:"signoff", label:"Crew — Next 2 Weeks Sign-Off, Evaluations & Goal Settings"},
+      {id:"succession", label:"Succession / Development Notes"} ]},
+    { num:"03", title:"Public Health", fields:[
+      {id:"lastinsp", label:"Last Inspection Findings"},
+      {id:"recentfindings", label:"Recent Findings"},
+      {id:"templogs", label:"Temperature Logs Compliance"},
+      {id:"cleaning", label:"Cleaning Schedules"} ]},
+    { num:"04", title:"Provisions, Ordering, Missing Items & Quality Issues", fields:[
+      {id:"erp", label:"ERP Log-In"},
+      {id:"stockissues", label:"Current Stock Issues"},
+      {id:"missingitems", label:"Missing Items"},
+      {id:"substitutions", label:"Substitutions in Use"},
+      {id:"quality", label:"Quality Concerns (Supplier / Product)"} ]},
+    { num:"05", title:"Equipment & Maintenance", fields:[
+      {id:"equipstatus", label:"Critical Equipment Status"},
+      {id:"aims", label:"Open AIMS / Pending Repairs"},
+      {id:"replacement", label:"Equipment Replacement Needs"} ]},
+    { num:"06", title:"Safety Responsibilities", fields:[
+      {id:"firesafety", label:"Fire Safety Training Schedules"},
+      {id:"safetyactions", label:"Outstanding Safety Actions"},
+      {id:"safetyconcerns", label:"Crew Safety Concerns"},
+      {id:"nearmiss", label:"Near Miss Reports"} ]},
+    { num:"07", title:"Performance & Ratings", fields:[
+      {id:"guestscores", label:"Guest Satisfaction Scores"},
+      {id:"improvement", label:"Improvement Areas"} ]},
+    { num:"08", title:"Upcoming", fields:[
+      {id:"focusareas", label:"Operational Focus Areas"},
+      {id:"upcomingevents", label:"Upcoming Events / High Volume Sailings"},
+      {id:"bimini", label:"Bimini Production & Schedule Operation — Production & Schedule"} ]}
+  ];
+
+  var STORAGE_KEY = "vv-venue-handovers-v1";
+  var ADMIN_KEY = "vv-admin-mode";
+
+  // ---------------------------------------------------------------
+  // Storage helpers (all data lives in this one browser)
+  // ---------------------------------------------------------------
+  function loadAll(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+  function saveAll(all){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){ /* storage unavailable */ }
+  }
+  function emptyFields(){
+    var out = {};
+    SECTIONS.forEach(function(s){ s.fields.forEach(function(f){ out[f.id] = ""; }); });
+    return out;
+  }
+  function emptyRecord(){
+    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, updatedAt:Date.now() };
+  }
+  function slugify(input){
+    return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
+  }
+  function readAdmin(){
+    try{ return localStorage.getItem(ADMIN_KEY) === "on"; }catch(e){ return false; }
+  }
+  function writeAdmin(on){
+    try{ localStorage.setItem(ADMIN_KEY, on ? "on" : "off"); }catch(e){}
+  }
+
+  var toastTimer = null;
+  function showToast(text){
+    var t = document.getElementById("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 1000);
+  }
+
+  // ---------------------------------------------------------------
+  // Router — plain hash-based, no build step needed
+  //   #home
+  //   #handover?v=<code>
+  //   #submitted?filter=submitted|all
+  // ---------------------------------------------------------------
+  function parseHash(){
+    var h = window.location.hash.replace(/^#/, "");
+    var qIndex = h.indexOf("?");
+    var path = qIndex === -1 ? h : h.slice(0, qIndex);
+    var qs = qIndex === -1 ? "" : h.slice(qIndex + 1);
+    var params = new URLSearchParams(qs);
+    return { path: path || "home", params: params };
+  }
+
+  function showView(name){
+    document.querySelectorAll("[data-view]").forEach(function(el){
+      el.classList.toggle("active", el.getAttribute("data-view") === name);
+    });
+    window.scrollTo(0,0);
+  }
+
+  function route(){
+    var r = parseHash();
+    if (r.path === "handover"){
+      showView("handover");
+      renderHandover(r.params.get("v") || "default-venue");
+    } else if (r.path === "submitted"){
+      showView("submitted");
+      renderSubmitted(r.params.get("filter") === "all" ? "all" : "submitted");
+    } else {
+      showView("home");
+      renderHome();
+    }
+  }
+  window.addEventListener("hashchange", route);
+
+  // ---------------------------------------------------------------
+  // HOME
+  // ---------------------------------------------------------------
+  function renderHome(){
+    var admin = readAdmin();
+    var btn = document.getElementById("btn-admin-toggle");
+    btn.textContent = "Admin mode " + (admin ? "on" : "off");
+    btn.className = "admin-pill " + (admin ? "on" : "off");
+    document.getElementById("manage-desc").textContent = admin
+      ? "Browse every venue, draft or submitted, and reopen as needed."
+      : "Enable admin mode below to browse and reopen all venues.";
+  }
+
+  document.getElementById("btn-admin-toggle").addEventListener("click", function(){
+    writeAdmin(!readAdmin());
+    renderHome();
+  });
+
+  document.getElementById("btn-create").addEventListener("click", function(){
+    var name = window.prompt('Name this venue / outlet (e.g. "Razzle Dazzle — Resilient Lady"):');
+    if (name === null) return;
+    var slug = slugify(name);
+    var all = loadAll();
+    if (!all[slug]) { all[slug] = emptyRecord(); saveAll(all); }
+    window.location.hash = "handover?v=" + encodeURIComponent(slug);
+  });
+
+  document.getElementById("btn-open").addEventListener("click", function(){
+    var code = window.prompt("Enter the venue / outlet code to continue:");
+    if (!code) return;
+    window.location.hash = "handover?v=" + encodeURIComponent(slugify(code));
+  });
+
+  document.getElementById("btn-submitted").addEventListener("click", function(){
+    window.location.hash = "submitted?filter=submitted";
+  });
+
+  document.getElementById("btn-manage").addEventListener("click", function(){
+    window.location.hash = readAdmin() ? "submitted?filter=all" : "submitted?filter=submitted";
+  });
+
+  // ---------------------------------------------------------------
+  // HANDOVER FORM
+  // ---------------------------------------------------------------
+  var currentVenueKey = "default-venue";
+  var saveTimer = null;
+
+  function buildSectionHTML(sections, startCounter){
+    var counter = startCounter;
+    var html = "";
+    sections.forEach(function(s){
+      html += '<div class="section-wrap">' +
+        '<div class="section-head"><span class="section-num">' + s.num + '</span><span class="section-title">' + s.title + '</span></div>' +
+        '<hr class="section-rule"><div class="cards-grid">';
+      s.fields.forEach(function(f){
+        counter++;
+        var accent = (counter % 2 === 1) ? "main" : "alt";
+        html += '<div class="card ' + accent + '">' +
+          '<div class="field-label"><span class="dash">—</span>' + f.label + '</div>' +
+          '<textarea data-field-id="' + f.id + '" placeholder="Click here to enter text."></textarea>' +
+          '</div>';
+      });
+      html += '</div></div>';
+    });
+    return { html: html, counter: counter };
+  }
+
+  // Build the section markup once
+  (function initSections(){
+    var top = buildSectionHTML(SECTIONS.slice(0,3), 0);
+    document.getElementById("sections-top").innerHTML = top.html;
+    var bottom = buildSectionHTML(SECTIONS.slice(3), top.counter);
+    document.getElementById("sections-bottom").innerHTML = bottom.html;
+  })();
+
+  function renderHandover(venueKey){
+    currentVenueKey = venueKey;
+    var all = loadAll();
+    var rec = all[venueKey] || emptyRecord();
+    if (!all[venueKey]) { all[venueKey] = rec; saveAll(all); }
+
+    document.getElementById("venue-code-input").value = venueKey;
+    document.getElementById("f-ship").value = rec.ship || "";
+    document.getElementById("f-outgoing").value = rec.outgoing || "";
+    document.getElementById("f-incoming").value = rec.incoming || "";
+    document.getElementById("f-date").value = rec.date || "";
+    document.getElementById("footer-date").textContent = rec.date || "—";
+    document.getElementById("handover-title").textContent = rec.ship || "Venue Handover";
+
+    document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
+      var id = ta.getAttribute("data-field-id");
+      ta.value = (rec.fields && rec.fields[id]) || "";
+    });
+
+    var admin = readAdmin();
+    var locked = rec.status === "submitted" && !admin;
+    document.getElementById("handover-fieldset").disabled = locked;
+    document.getElementById("handover-admin-flag").style.display = admin ? "inline" : "none";
+
+    var badge = document.getElementById("handover-status-badge");
+    badge.textContent = rec.status === "submitted" ? "Submitted" : "Draft";
+    badge.className = "status-badge " + (rec.status === "submitted" ? "submitted" : "draft");
+
+    var submitBtn = document.getElementById("btn-submit-handover");
+    var reopenBtn = document.getElementById("btn-reopen-handover");
+    var lockedNote = document.getElementById("locked-note");
+
+    if (rec.status === "submitted"){
+      submitBtn.style.display = "none";
+      if (admin){
+        reopenBtn.style.display = "inline-block";
+        lockedNote.style.display = "none";
+      } else {
+        reopenBtn.style.display = "none";
+        lockedNote.style.display = "inline";
+        lockedNote.textContent = "Submitted " + (rec.submittedAt ? new Date(rec.submittedAt).toLocaleDateString() : "") + " — read-only";
+      }
+    } else {
+      submitBtn.style.display = "inline-block";
+      reopenBtn.style.display = "none";
+      lockedNote.style.display = "none";
+    }
+  }
+
+  function currentFormValues(){
+    var fields = {};
+    document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
+      fields[ta.getAttribute("data-field-id")] = ta.value;
+    });
+    return {
+      ship: document.getElementById("f-ship").value,
+      outgoing: document.getElementById("f-outgoing").value,
+      incoming: document.getElementById("f-incoming").value,
+      date: document.getElementById("f-date").value,
+      fields: fields
+    };
+  }
+
+  function persistCurrent(overrides){
+    var all = loadAll();
+    var existing = all[currentVenueKey] || emptyRecord();
+    var vals = currentFormValues();
+    var next = Object.assign({}, existing, vals, overrides || {}, { updatedAt: Date.now() });
+    all[currentVenueKey] = next;
+    saveAll(all);
+    document.getElementById("footer-date").textContent = next.date || "—";
+    document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
+    showToast("Saved");
+    return next;
+  }
+
+  function scheduleSave(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ persistCurrent(); }, 500);
+  }
+
+  document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
+
+  document.getElementById("venue-code-open").addEventListener("click", function(){
+    var slug = slugify(document.getElementById("venue-code-input").value);
+    window.location.hash = "handover?v=" + encodeURIComponent(slug);
+  });
+  document.getElementById("venue-code-input").addEventListener("keydown", function(e){
+    if (e.key === "Enter") document.getElementById("venue-code-open").click();
+  });
+
+  document.getElementById("btn-submit-handover").addEventListener("click", function(){
+    var now = Date.now();
+    persistCurrent({ status: "submitted", submittedAt: now });
+    renderHandover(currentVenueKey);
+  });
+  document.getElementById("btn-reopen-handover").addEventListener("click", function(){
+    persistCurrent({ status: "draft", submittedAt: null });
+    renderHandover(currentVenueKey);
+  });
+  document.getElementById("handover-back").addEventListener("click", function(){
+    window.location.hash = "home";
+  });
+
+  // ---------------------------------------------------------------
+  // SUBMITTED / MANAGE LIST
+  // ---------------------------------------------------------------
+  function renderSubmitted(filter){
+    var admin = readAdmin();
+    var showingAll = filter === "all";
+    var blocked = showingAll && !admin;
+
+    document.getElementById("submitted-title").textContent = showingAll ? "Manage Venues" : "Submitted Handovers";
+    document.getElementById("submitted-subtitle").textContent = showingAll
+      ? "Every venue on record, draft or submitted."
+      : "Completed handovers and their follow-up points.";
+    document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
+
+    var listEl = document.getElementById("submitted-list");
+    listEl.innerHTML = "";
+    if (blocked) return;
+
+    var all = loadAll();
+    var keys = Object.keys(all);
+    var rows = keys
+      .map(function(k){ return Object.assign({ venueKey:k }, all[k]); })
+      .filter(function(r){ return showingAll || r.status === "submitted"; })
+      .sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
+
+    if (rows.length === 0){
+      listEl.innerHTML = '<p class="list-empty">Nothing here yet.</p>';
+      return;
+    }
+
+    rows.forEach(function(r){
+      var row = document.createElement("button");
+      row.className = "list-row";
+      row.innerHTML =
+        '<div>' +
+          '<div class="list-row-title">' + (escapeHtml(r.ship) || r.venueKey) + '</div>' +
+          '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
+        '</div>' +
+        '<div class="list-row-right">' +
+          '<span class="status-badge ' + (r.status === "submitted" ? "submitted" : "draft") + '">' + (r.status === "submitted" ? "Submitted" : "Draft") + '</span>' +
+          '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
+        '</div>';
+      row.addEventListener("click", function(){
+        window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey);
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  function escapeHtml(s){
+    if (!s) return s;
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  document.getElementById("submitted-back").addEventListener("click", function(){
+    window.location.hash = "home";
+  });
+
+  // ---------------------------------------------------------------
+  // boot
+  // ---------------------------------------------------------------
+  if (!window.location.hash) window.location.hash = "home";
+  route();
+})();
+</script>
+
+</body>
+</html>
