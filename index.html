@@ -238,6 +238,13 @@
   .list-row-sub{ font-size:13px; color:var(--vv-gray-mid); margin-top:3px; }
   .list-row-right{ display:flex; align-items:center; gap:12px; }
   .list-row-date{ font-size:12.5px; color:var(--vv-gray-mid); min-width:80px; text-align:right; }
+  .list-row-delete{
+    border:1px solid #F0C9C9; background:#fff; color:var(--vv-red-deep);
+    font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
+    border-radius:20px; padding:5px 12px; cursor:pointer;
+  }
+  .list-row-delete:hover{ background:var(--vv-red); border-color:var(--vv-red); color:#fff; }
+  .list-row-delete:disabled{ opacity:0.6; cursor:default; }
 
   .status-toast{
     position:fixed; bottom:16px; right:16px; background:var(--vv-near-black); color:#fff;
@@ -327,6 +334,7 @@
       <button class="btn-submit" id="btn-submit-handover">Submit handover</button>
       <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
       <span class="locked-note" id="locked-note" style="display:none;"></span>
+      <button type="button" class="list-row-delete" id="btn-delete-handover" style="display:none;">Delete handover</button>
     </div>
 
     <p id="no-venue-note" style="display:none; color:var(--vv-gray-mid); font-size:14px; margin:0 0 24px;">
@@ -453,6 +461,12 @@
   var STORAGE_KEY = "vv-venue-handovers-v1";
   var ADMIN_KEY = "vv-admin-mode";
 
+  // Admin password — a basic deterrent, not real security: this file is
+  // plain client-side HTML, so anyone who views source can read this value.
+  // It stops casual access; it does not stop someone who opens the source.
+  // For real access control, this needs a proper login (e.g. Supabase Auth).
+  var ADMIN_PASSWORD = "handover2026";
+
   // The fleet — picked first, before the station(s).
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -565,6 +579,29 @@
     localSaveAll(all);
   }
 
+  // Delete one venue's record entirely — admin-only action, used from the
+  // "Manage Venues" list and from the handover page itself.
+  async function deleteRecord(venueKey){
+    var rec = await fetchHandoverRecord(venueKey);
+
+    if (SUPABASE_CONFIGURED){
+      var res = await sb.from("handovers").delete().eq("id", venueKey);
+      if (res.error){ console.error(res.error); return false; }
+      // Best-effort cleanup of any attached files; a record with no files
+      // skips this harmlessly.
+      var paths = (rec.attachments || []).map(function(a){ return a.path; }).filter(Boolean);
+      if (paths.length > 0){
+        var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove(paths);
+        if (del.error) console.error(del.error);
+      }
+      return true;
+    }
+    var all = localLoadAll();
+    delete all[venueKey];
+    localSaveAll(all);
+    return true;
+  }
+
   // List records, optionally filtered by status ("draft" | "submitted" | null for all).
   async function listRecords(statusFilter){
     if (SUPABASE_CONFIGURED){
@@ -667,7 +704,19 @@
   }
 
   document.getElementById("btn-admin-toggle").addEventListener("click", function(){
-    writeAdmin(!readAdmin());
+    if (readAdmin()){
+      // Turning off needs no password — only turning on is gated.
+      writeAdmin(false);
+      renderHome();
+      return;
+    }
+    var entered = window.prompt("Enter the admin password:");
+    if (entered === null) return; // cancelled
+    if (entered !== ADMIN_PASSWORD){
+      window.alert("Incorrect password.");
+      return;
+    }
+    writeAdmin(true);
     renderHome();
   });
 
@@ -878,6 +927,8 @@
       lockedNote.style.display = "none";
     }
 
+    document.getElementById("btn-delete-handover").style.display = admin ? "inline-block" : "none";
+
     currentAttachments = rec.attachments || [];
     renderFileListUI(currentAttachments, locked);
   }
@@ -1012,6 +1063,7 @@
       document.getElementById("btn-submit-handover").style.display = "none";
       document.getElementById("btn-reopen-handover").style.display = "none";
       document.getElementById("locked-note").style.display = "none";
+      document.getElementById("btn-delete-handover").style.display = "none";
       fieldset.style.display = "none";
       if (noVenueNote) noVenueNote.style.display = "block";
       setSyncStatus(SUPABASE_CONFIGURED ? "live" : "live");
@@ -1135,6 +1187,15 @@
     await persistCurrent({ status: "draft", submittedAt: null });
     renderHandover(currentVenueKey);
   });
+  document.getElementById("btn-delete-handover").addEventListener("click", async function(){
+    var label = venueKeyDisplay(currentVenueKey) || currentVenueKey;
+    if (!window.confirm('Delete the handover for "' + label + '"? This can\u2019t be undone.')) return;
+    var btn = document.getElementById("btn-delete-handover");
+    btn.disabled = true;
+    btn.textContent = "Deleting…";
+    await deleteRecord(currentVenueKey);
+    window.location.hash = "home";
+  });
   document.getElementById("handover-back").addEventListener("click", function(){
     window.location.hash = "home";
   });
@@ -1180,20 +1241,36 @@
     }
 
     rows.forEach(function(r){
-      var row = document.createElement("button");
+      var row = document.createElement("div");
       row.className = "list-row";
+      row.tabIndex = 0;
       row.innerHTML =
         '<div>' +
-          '<div class="list-row-title">' + (escapeHtml(r.ship) || r.venueKey) + '</div>' +
+          '<div class="list-row-title">' + (escapeHtml(r.ship) || escapeHtml(venueKeyDisplay(r.venueKey)) || r.venueKey) + '</div>' +
           '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
         '</div>' +
         '<div class="list-row-right">' +
           '<span class="status-badge ' + (r.status === "submitted" ? "submitted" : "draft") + '">' + (r.status === "submitted" ? "Submitted" : "Draft") + '</span>' +
           '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
+          (admin ? '<button type="button" class="list-row-delete">Delete</button>' : '') +
         '</div>';
-      row.addEventListener("click", function(){
-        window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey);
-      });
+
+      function goToRow(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
+      row.addEventListener("click", goToRow);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter") goToRow(); });
+
+      if (admin){
+        var delBtn = row.querySelector(".list-row-delete");
+        delBtn.addEventListener("click", async function(e){
+          e.stopPropagation();
+          var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
+          if (!window.confirm('Delete the handover for "' + label + '"? This can\u2019t be undone.')) return;
+          delBtn.disabled = true;
+          delBtn.textContent = "Deleting…";
+          await deleteRecord(r.venueKey);
+          renderSubmitted(filter);
+        });
+      }
       listEl.appendChild(row);
     });
   }
