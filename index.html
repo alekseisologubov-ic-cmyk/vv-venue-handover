@@ -218,6 +218,26 @@
   .field-label .dash{ color:var(--vv-red); font-weight:900; }
   textarea{ width:100%; min-height:72px; resize:vertical; border:1px solid #E3D8EA; border-radius:6px; padding:8px 10px; font-family:inherit; font-size:14px; color:inherit; background:#FBFAFC; flex:1; }
   textarea:focus{ outline:none; border-color:var(--vv-red); }
+
+  /* per-field attachments (small attach icon + chip list under each textarea) */
+  .field-attach-chips{ display:flex; flex-direction:column; gap:2px; margin-top:6px; }
+  .field-attach-chips:empty{ margin-top:0; }
+  .field-attach-chip{
+    font-size:11.5px; color:var(--vv-body-text); display:flex; align-items:center; gap:4px;
+  }
+  .field-attach-chip a{ color:var(--vv-squid-ink); text-decoration:none; font-weight:600; }
+  .field-attach-chip a:hover{ text-decoration:underline; }
+  .field-attach-chip-remove{
+    color:var(--vv-red-deep); cursor:pointer; font-size:11px; background:none; border:none; padding:0; font-family:inherit;
+  }
+  .field-attach-row{ display:flex; justify-content:flex-end; margin-top:6px; }
+  .field-attach-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; border-radius:50%; background:#F5F1F7; color:var(--vv-squid-ink);
+    font-size:13px; cursor:pointer; border:1px solid #E3D8EA;
+  }
+  .field-attach-btn:hover{ background:#EFE5F4; }
+  .field-attach-btn.busy{ opacity:0.5; pointer-events:none; }
   fieldset{ border:none; padding:0; margin:0; }
   fieldset:disabled textarea, fieldset:disabled input{ background:#F2EFF4; color:#8a8a8a; }
 
@@ -264,6 +284,29 @@
 
   [data-view]{ display:none; }
   [data-view].active{ display:block; }
+
+  /* attachment preview modal (images/PDFs open here, not a new browser tab) */
+  .attachment-modal{ position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .attachment-modal-backdrop{ position:absolute; inset:0; background:rgba(20,10,30,0.72); }
+  .attachment-modal-box{
+    position:relative; background:#fff; border-radius:10px; max-width:min(900px, 92vw); max-height:88vh;
+    display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.35);
+  }
+  .attachment-modal-header{
+    display:flex; align-items:center; gap:14px; padding:12px 16px; border-bottom:1px solid #EFE8F2;
+  }
+  .attachment-modal-name{ font-weight:700; font-size:14px; color:var(--vv-ink); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .attachment-modal-link{ font-size:12.5px; color:var(--vv-squid-ink); text-decoration:none; white-space:nowrap; }
+  .attachment-modal-link:hover{ text-decoration:underline; }
+  .attachment-modal-close{
+    border:none; background:#F5F1F7; color:var(--vv-ink); width:28px; height:28px; border-radius:50%;
+    font-size:16px; cursor:pointer; line-height:1; flex-shrink:0;
+  }
+  .attachment-modal-close:hover{ background:#E3D8EA; }
+  .attachment-modal-body{ padding:16px; overflow:auto; display:flex; align-items:center; justify-content:center; min-height:200px; }
+  .attachment-modal-body img{ max-width:100%; max-height:76vh; display:block; border-radius:4px; }
+  .attachment-modal-body iframe{ width:min(820px, 86vw); height:72vh; border:none; }
+  .attachment-modal-unsupported{ text-align:center; color:var(--vv-gray-mid); font-size:14px; padding:30px; }
 
   @media (max-width:640px){ .band-inner{align-items:flex-start;} }
 </style>
@@ -377,6 +420,13 @@
       <section class="attachments-card">
         <div class="field-label"><span class="dash">—</span>General Comments</div>
         <textarea data-field-id="generalcomment" style="min-height:110px;" placeholder="Anything that doesn't fit a specific section below — overall notes for the incoming chef."></textarea>
+        <div class="field-attach-chips" data-attach-list="generalcomment"></div>
+        <div class="field-attach-row">
+          <label class="field-attach-btn" title="Attach a photo or file to this item">
+            📎
+            <input type="file" class="field-attach-input" data-attach-field="generalcomment" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">
+          </label>
+        </div>
       </section>
 
       <div id="sections-top"></div>
@@ -418,6 +468,18 @@
 </div>
 
 <div class="status-toast" id="toast">Saved</div>
+
+<div class="attachment-modal" id="attachment-modal" style="display:none;">
+  <div class="attachment-modal-backdrop" id="attachment-modal-backdrop"></div>
+  <div class="attachment-modal-box">
+    <div class="attachment-modal-header">
+      <span class="attachment-modal-name" id="attachment-modal-name"></span>
+      <a href="#" id="attachment-modal-newtab" target="_blank" rel="noopener" class="attachment-modal-link">Open in new tab</a>
+      <button type="button" class="attachment-modal-close" id="attachment-modal-close">×</button>
+    </div>
+    <div class="attachment-modal-body" id="attachment-modal-body"></div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -548,6 +610,7 @@
       submittedAt: row.submitted_at || null,
       deletedAt: row.deleted_at || null,
       attachments: row.attachments || [],
+      fieldAttachments: row.field_attachments || {},
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     };
   }
@@ -563,6 +626,7 @@
       submitted_at: rec.submittedAt || null,
       deleted_at: rec.deletedAt || null,
       attachments: rec.attachments || [],
+      field_attachments: rec.fieldAttachments || {},
       updated_at: new Date().toISOString(),
     };
   }
@@ -643,7 +707,7 @@
     return out;
   }
   function emptyRecord(){
-    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, deletedAt:null, attachments:[], updatedAt:Date.now() };
+    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
   }
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
@@ -760,6 +824,7 @@
   // ---------------------------------------------------------------
   var currentVenueKey = "default-venue";
   var currentAttachments = [];
+  var currentFieldAttachments = {}; // { fieldId: [attachment, ...] }
   var saveTimer = null;
   var currentChannel = null;
   var skipNextRealtime = false; // our own writes also fire a realtime event — ignore it once
@@ -784,6 +849,13 @@
         html += '<div class="card ' + accent + '">' +
           '<div class="field-label"><span class="dash">—</span>' + f.label + '</div>' +
           '<textarea data-field-id="' + f.id + '" placeholder="Click here to enter text."></textarea>' +
+          '<div class="field-attach-chips" data-attach-list="' + f.id + '"></div>' +
+          '<div class="field-attach-row">' +
+            '<label class="field-attach-btn" title="Attach a photo or file to this item">' +
+              '📎' +
+              '<input type="file" class="field-attach-input" data-attach-field="' + f.id + '" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">' +
+            '</label>' +
+          '</div>' +
           '</div>';
       });
       html += '</div></div>';
@@ -951,9 +1023,128 @@
 
     currentAttachments = rec.attachments || [];
     renderFileListUI(currentAttachments, locked);
+
+    currentFieldAttachments = rec.fieldAttachments || {};
+    document.querySelectorAll(".field-attach-chips").forEach(function(el){
+      renderFieldAttachmentChips(el.getAttribute("data-attach-list"), locked);
+    });
+    document.querySelectorAll(".field-attach-row").forEach(function(el){
+      el.style.display = locked ? "none" : "flex";
+    });
   }
 
   var ATTACHMENTS_BUCKET = "handover-files"; // matches your existing Storage bucket
+
+  // Small 📎 chip list under one specific field's textarea.
+  function renderFieldAttachmentChips(fieldId, locked){
+    var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
+    if (!el) return;
+    var list = currentFieldAttachments[fieldId] || [];
+    el.innerHTML = list.map(function(a, idx){
+      var removeLink = locked ? "" :
+        ' <button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '">×</button>';
+      return '<div class="field-attach-chip">📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
+    }).join("");
+
+    el.querySelectorAll("[data-open-field]").forEach(function(a){
+      a.addEventListener("click", function(e){
+        e.preventDefault();
+        var fid = a.getAttribute("data-open-field");
+        var idx = parseInt(a.getAttribute("data-open-idx"), 10);
+        openAttachmentModal((currentFieldAttachments[fid] || [])[idx]);
+      });
+    });
+  }
+
+  async function handleFieldFileSelected(fieldId, fileList, triggerEl){
+    var files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    if (triggerEl) triggerEl.classList.add("busy");
+
+    var uploaded = await uploadFiles(currentVenueKey, files);
+    var next = Object.assign({}, currentFieldAttachments);
+    next[fieldId] = (next[fieldId] || []).concat(uploaded);
+    currentFieldAttachments = next;
+    renderFieldAttachmentChips(fieldId, false);
+
+    await persistCurrent({ fieldAttachments: next });
+    if (triggerEl) triggerEl.classList.remove("busy");
+  }
+
+  async function removeFieldAttachment(fieldId, idx){
+    var list = (currentFieldAttachments[fieldId] || []).slice();
+    var removed = list[idx];
+    list.splice(idx, 1);
+    var next = Object.assign({}, currentFieldAttachments);
+    next[fieldId] = list;
+    currentFieldAttachments = next;
+    renderFieldAttachmentChips(fieldId, false);
+
+    await persistCurrent({ fieldAttachments: next });
+    if (SUPABASE_CONFIGURED && removed && removed.path){
+      var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove([removed.path]);
+      if (del.error) console.error(del.error);
+    }
+  }
+
+  // Delegated listeners — the field cards are rebuilt on every load, so these
+  // are attached once to a stable ancestor instead of per-card.
+  document.getElementById("handover-fieldset").addEventListener("change", function(e){
+    var input = e.target.closest(".field-attach-input");
+    if (!input) return;
+    var fieldId = input.getAttribute("data-attach-field");
+    var label = input.closest(".field-attach-btn");
+    handleFieldFileSelected(fieldId, input.files, label);
+    input.value = "";
+  });
+  document.getElementById("handover-fieldset").addEventListener("click", function(e){
+    var btn = e.target.closest(".field-attach-chip-remove");
+    if (!btn) return;
+    removeFieldAttachment(btn.getAttribute("data-attach-field"), parseInt(btn.getAttribute("data-attach-idx"), 10));
+  });
+
+  // ---------------------------------------------------------------
+  // Attachment preview modal — images and PDFs open here instead of a new
+  // browser tab; anything else (Word/Excel/CSV) can't be previewed inline by
+  // the browser, so that case just offers the "Open in new tab" link.
+  // ---------------------------------------------------------------
+  function openAttachmentModal(a){
+    var modal = document.getElementById("attachment-modal");
+    var body = document.getElementById("attachment-modal-body");
+    var nameEl = document.getElementById("attachment-modal-name");
+    var newTabLink = document.getElementById("attachment-modal-newtab");
+
+    nameEl.textContent = a.name || "Attachment";
+    newTabLink.href = a.url;
+    body.innerHTML = "";
+
+    var type = a.type || "";
+    if (type.indexOf("image/") === 0){
+      var img = document.createElement("img");
+      img.src = a.url;
+      img.alt = a.name || "";
+      body.appendChild(img);
+    } else if (type === "application/pdf"){
+      var iframe = document.createElement("iframe");
+      iframe.src = a.url;
+      body.appendChild(iframe);
+    } else {
+      var msg = document.createElement("div");
+      msg.className = "attachment-modal-unsupported";
+      msg.textContent = "This file type can't be previewed here — use \"Open in new tab\" above.";
+      body.appendChild(msg);
+    }
+    modal.style.display = "flex";
+  }
+  function closeAttachmentModal(){
+    document.getElementById("attachment-modal").style.display = "none";
+    document.getElementById("attachment-modal-body").innerHTML = ""; // stop any PDF/video from playing in the background
+  }
+  document.getElementById("attachment-modal-close").addEventListener("click", closeAttachmentModal);
+  document.getElementById("attachment-modal-backdrop").addEventListener("click", closeAttachmentModal);
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape" && document.getElementById("attachment-modal").style.display !== "none") closeAttachmentModal();
+  });
 
   function formatBytes(bytes){
     if (!bytes && bytes !== 0) return "";
@@ -1032,9 +1223,16 @@
     listEl.innerHTML = files.map(function(f, idx){
       var sizeTxt = formatBytes(f.size);
       var removeLink = locked ? "" : ' · <a href="#" data-remove-idx="' + idx + '" class="attachment-remove-link">remove</a>';
-      return '<div class="attachment-row">📎 <a href="' + f.url + '" target="_blank" rel="noopener">' + escapeHtml(f.name) + '</a>' +
+      return '<div class="attachment-row">📎 <a href="#" data-open-main="' + idx + '">' + escapeHtml(f.name) + '</a>' +
         (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '</div>';
     }).join("");
+
+    listEl.querySelectorAll("[data-open-main]").forEach(function(a){
+      a.addEventListener("click", function(e){
+        e.preventDefault();
+        openAttachmentModal(currentAttachments[parseInt(a.getAttribute("data-open-main"), 10)]);
+      });
+    });
 
     if (!locked){
       listEl.querySelectorAll("[data-remove-idx]").forEach(function(a){
