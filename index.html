@@ -117,8 +117,27 @@
   .venue-picker{ display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
   .venue-picker-label{ font-size:12px; color:var(--vv-gray-mid); text-transform:uppercase; letter-spacing:0.05em; }
   .venue-picker input{ border:1px solid #D9CBE2; border-radius:20px; padding:6px 14px; font-size:13px; font-family:inherit; }
-  .venue-picker button{ border:none; background:var(--vv-squid-ink); color:#fff; border-radius:20px; padding:7px 16px; font-size:13px; font-weight:700; cursor:pointer; }
-  .venue-picker button:hover{ background:var(--vv-squid-ink-light); }
+  .venue-multi-wrap{ position:relative; }
+  .venue-picker .venue-multi-toggle{
+    border:1px solid #D9CBE2; border-radius:20px; padding:7px 16px; font-size:13px;
+    font-family:inherit; background:#fff; color:var(--vv-body-text); cursor:pointer; min-width:220px;
+    text-align:left; max-width:360px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-weight:400; text-transform:none;
+  }
+  .venue-picker .venue-multi-toggle:hover{ border-color:var(--vv-squid-ink); }
+  .venue-multi-panel{
+    position:absolute; top:calc(100% + 6px); left:0; z-index:20;
+    background:#fff; border:1px solid #D9CBE2; border-radius:10px;
+    box-shadow:0 8px 24px rgba(20,10,30,0.15); padding:10px; width:280px;
+  }
+  .venue-checkbox-list{ max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+  .venue-checkbox-item{
+    display:flex; align-items:center; gap:8px; font-size:13px; padding:5px 6px;
+    border-radius:6px; cursor:pointer;
+  }
+  .venue-checkbox-item:hover{ background:#F5F1F7; }
+  .venue-checkbox-item input{ cursor:pointer; }
+  .venue-multi-actions{ display:flex; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid #EFE8F2; }
   .btn-submit{ border:none; background:var(--vv-red); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .btn-submit:hover{ background:var(--vv-red-light); }
   .btn-outline{ border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
@@ -285,14 +304,26 @@
     </div>
 
     <div class="venue-picker">
-      <span class="venue-picker-label">Venue / outlet code:</span>
-      <input id="venue-code-input" placeholder="e.g. razzle-dazzle-resilient-lady">
-      <button id="venue-code-open">Open</button>
+      <span class="venue-picker-label">Venue:</span>
+      <div class="venue-multi-wrap">
+        <button type="button" class="venue-multi-toggle" id="venue-multi-toggle">Select venue(s)…</button>
+        <div class="venue-multi-panel" id="venue-multi-panel" style="display:none;">
+          <div class="venue-checkbox-list" id="venue-checkbox-list"></div>
+          <div class="venue-multi-actions">
+            <button type="button" class="btn-submit" id="venue-multi-apply">Open</button>
+            <button type="button" class="btn-outline" id="venue-multi-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
       <span style="flex:1"></span>
       <button class="btn-submit" id="btn-submit-handover">Submit handover</button>
       <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
       <span class="locked-note" id="locked-note" style="display:none;"></span>
     </div>
+
+    <p id="no-venue-note" style="display:none; color:var(--vv-gray-mid); font-size:14px; margin:0 0 24px;">
+      Pick a venue above to create or continue its handover.
+    </p>
 
     <fieldset id="handover-fieldset">
       <section class="ship-card">
@@ -408,6 +439,19 @@
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
   var ADMIN_KEY = "vv-admin-mode";
+
+  // Venue/station list — pulled from Station_Budget_proposal.xlsx ("By Location").
+  // One ship, each entry below is a station/outlet on it.
+  var STATIONS = [
+    "Culinary Leadership", "Culinary Leadership Night", "Extra Virgin", "The Wake", "The Wake Night",
+    "Test Kitchen", "Razzle Dazzle", "Razzle Dazzle Night", "Pink Agave", "Gunbae", "The Dock",
+    "The Social Club", "The Galley", "The Galley Night", "Dine & Dash", "Let's Taco 'bout it",
+    "The Daily Mix", "Noodle Around", "Burger Bar", "Hot of The Press", "Bento Baby",
+    "Well Bread & Sweet Side", "The Pizza Place", "Sun Club", "Ship Eats", "Ship Eats Night",
+    "Butchery", "Fish Room", "Vegetable Prep", "Vegetable Prep Night", "Garde Manger",
+    "Garde Manger Night", "Main Pastry", "Main Pastry Night", "Bakery", "Bakery Night",
+    "The Kitchen Table", "The Kitchen Table Night", "The Manor"
+  ];
 
   // ---------------------------------------------------------------
   // Supabase config — fill these in to sync across devices instead of
@@ -579,7 +623,7 @@
     if (r.path !== "handover") unsubscribeCurrentChannel(); // leaving the form — stop listening for its updates
     if (r.path === "handover"){
       showView("handover");
-      renderHandover(r.params.get("v") || "default-venue");
+      renderHandover(r.params.get("v") || "");
     } else if (r.path === "submitted"){
       showView("submitted");
       renderSubmitted(r.params.get("filter") === "all" ? "all" : "submitted");
@@ -611,18 +655,14 @@
     renderHome();
   });
 
-  document.getElementById("btn-create").addEventListener("click", async function(){
-    // No prompt — jump straight into a blank form. The venue code is just an
-    // internal handle; the chef names the actual venue on the form itself.
-    var slug = "handover-" + Date.now().toString(36);
-    await saveRecord(slug, emptyRecord());
-    window.location.hash = "handover?v=" + encodeURIComponent(slug) + "&new=1";
+  // Both buttons land on the same form — the dropdown there is the one
+  // place venues are picked from now (no more free-typed codes).
+  document.getElementById("btn-create").addEventListener("click", function(){
+    window.location.hash = "handover";
   });
 
   document.getElementById("btn-open").addEventListener("click", function(){
-    var code = window.prompt("Enter the venue / outlet code to continue:");
-    if (!code) return;
-    window.location.hash = "handover?v=" + encodeURIComponent(slugify(code));
+    window.location.hash = "handover";
   });
 
   document.getElementById("btn-submitted").addEventListener("click", function(){
@@ -677,14 +717,81 @@
     document.getElementById("sections-bottom").innerHTML = bottom.html;
   })();
 
+  // ---------------------------------------------------------------
+  // Multi-venue picker — a leader covering several stations checks all of
+  // them; the combined selection becomes one handover whose key is the
+  // sorted, "+"-joined list of station slugs (e.g. "razzle-dazzle+the-wake").
+  // ---------------------------------------------------------------
+  function slugToLabel(slug){
+    var found = STATIONS.filter(function(n){ return slugify(n) === slug; })[0];
+    return found || slug;
+  }
+  function venueKeyToLabels(key){
+    return key ? key.split("+").map(slugToLabel) : [];
+  }
+  function labelsToVenueKey(labels){
+    return labels.map(slugify).sort().join("+");
+  }
+
+  (function initVenuePicker(){
+    var list = document.getElementById("venue-checkbox-list");
+    STATIONS.forEach(function(name){
+      var label = document.createElement("label");
+      label.className = "venue-checkbox-item";
+      label.innerHTML = '<input type="checkbox" value="' + slugify(name) + '"> ' + escapeHtml(name);
+      list.appendChild(label);
+    });
+
+    var toggle = document.getElementById("venue-multi-toggle");
+    var panel = document.getElementById("venue-multi-panel");
+
+    function openPanel(){
+      // Re-sync checkboxes to the currently open venue every time it's opened.
+      var checked = venueKeyToLabels(currentVenueKey).map(slugify);
+      list.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
+        cb.checked = checked.indexOf(cb.value) !== -1;
+      });
+      panel.style.display = "block";
+    }
+    function closePanel(){ panel.style.display = "none"; }
+
+    toggle.addEventListener("click", function(e){
+      e.stopPropagation();
+      if (panel.style.display === "block") closePanel(); else openPanel();
+    });
+    document.addEventListener("click", function(e){
+      if (panel.style.display === "block" && !panel.contains(e.target) && e.target !== toggle) closePanel();
+    });
+
+    document.getElementById("venue-multi-apply").addEventListener("click", function(){
+      var checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(function(cb){ return cb.value; });
+      closePanel();
+      if (checked.length === 0) return;
+      window.location.hash = "handover?v=" + encodeURIComponent(checked.sort().join("+"));
+    });
+    document.getElementById("venue-multi-cancel").addEventListener("click", closePanel);
+  })();
+
+  function updateVenueToggleLabel(venueKey){
+    var toggle = document.getElementById("venue-multi-toggle");
+    var labels = venueKeyToLabels(venueKey);
+    toggle.textContent = labels.length ? labels.join(" + ") : "Select venue(s)…";
+  }
+
   function applyRecordToForm(venueKey, rec){
-    document.getElementById("venue-code-input").value = venueKey;
-    document.getElementById("f-ship").value = rec.ship || "";
+    updateVenueToggleLabel(venueKey);
+
+    // Pre-fill the display name from the selected station(s) if the chef
+    // hasn't typed their own name for it yet — still fully editable.
+    var joinedLabel = venueKeyToLabels(venueKey).join(" + ");
+    var shipValue = rec.ship || joinedLabel;
+
+    document.getElementById("f-ship").value = shipValue;
     document.getElementById("f-outgoing").value = rec.outgoing || "";
     document.getElementById("f-incoming").value = rec.incoming || "";
     document.getElementById("f-date").value = rec.date || "";
     document.getElementById("footer-date").textContent = rec.date || "—";
-    document.getElementById("handover-title").textContent = rec.ship || "Venue Handover";
+    document.getElementById("handover-title").textContent = shipValue || "Venue Handover";
 
     document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
       var id = ta.getAttribute("data-field-id");
@@ -843,6 +950,26 @@
     currentVenueKey = venueKey;
     unsubscribeCurrentChannel();
 
+    var fieldset = document.getElementById("handover-fieldset");
+    var noVenueNote = document.getElementById("no-venue-note");
+
+    if (!venueKey){
+      // Nothing picked yet — show the dropdown and a prompt, nothing else.
+      updateVenueToggleLabel("");
+      document.getElementById("handover-title").textContent = "Venue Handover";
+      document.getElementById("handover-status-badge").style.display = "none";
+      document.getElementById("btn-submit-handover").style.display = "none";
+      document.getElementById("btn-reopen-handover").style.display = "none";
+      document.getElementById("locked-note").style.display = "none";
+      fieldset.style.display = "none";
+      if (noVenueNote) noVenueNote.style.display = "block";
+      setSyncStatus(SUPABASE_CONFIGURED ? "live" : "live");
+      return;
+    }
+    fieldset.style.display = "";
+    if (noVenueNote) noVenueNote.style.display = "none";
+    document.getElementById("handover-status-badge").style.display = "";
+
     var bannerWrap = document.getElementById("handover-config-banner-wrap");
     if (bannerWrap){
       bannerWrap.innerHTML = SUPABASE_CONFIGURED
@@ -946,14 +1073,6 @@
   // File input: save immediately on selection (uploads + record save as one step).
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
-  });
-
-  document.getElementById("venue-code-open").addEventListener("click", function(){
-    var slug = slugify(document.getElementById("venue-code-input").value);
-    window.location.hash = "handover?v=" + encodeURIComponent(slug);
-  });
-  document.getElementById("venue-code-input").addEventListener("keydown", function(e){
-    if (e.key === "Enter") document.getElementById("venue-code-open").click();
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
