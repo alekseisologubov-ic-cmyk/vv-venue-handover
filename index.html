@@ -956,7 +956,16 @@
         return;
       }
       closePanel();
-      window.location.hash = "handover?v=" + encodeURIComponent(buildVenueKey(shipChecked.value, stationsChecked));
+      var baseKey = buildVenueKey(shipChecked.value, stationsChecked);
+      // Starting fresh from the home screen (no venue open yet) always makes
+      // a brand-new report, even for a ship/station combo used before — so
+      // there can be as many open reports for the same ship as needed.
+      // Switching ship/station while already viewing a handover still
+      // navigates to that exact existing one, unchanged.
+      var key = currentVenueKey
+        ? baseKey
+        : baseKey + "__" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      window.location.hash = "handover?v=" + encodeURIComponent(key);
     });
     document.getElementById("venue-multi-cancel").addEventListener("click", closePanel);
   })();
