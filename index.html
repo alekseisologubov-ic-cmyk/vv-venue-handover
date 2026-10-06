@@ -134,6 +134,49 @@
   .ship-field input{ width:100%; border:none; border-bottom:2px solid #E3D8EA; background:transparent; font-size:15px; padding:4px 2px 6px; font-family:inherit; color:inherit; }
   .ship-field input:focus{ outline:none; border-bottom-color:var(--vv-red); }
 
+  /* ---- attachments (photos & files) ---- */
+  .attachments-card{
+    background:var(--vv-white); border-top:3px solid var(--vv-squid-ink); border-radius:10px;
+    padding:18px 20px; margin-bottom:22px; box-shadow:0 2px 10px rgba(60,16,83,0.08);
+  }
+  .attachments-list{ margin:10px 0 14px; }
+  .attachment-tile{
+    position:relative; border:1px solid #E3D8EA; border-radius:8px; padding:8px;
+    display:flex; flex-direction:column; gap:6px; background:#FBFAFC;
+  }
+  .attachment-thumb{
+    display:flex; align-items:center; justify-content:center;
+    width:100%; aspect-ratio:1/1; border-radius:6px; overflow:hidden;
+    background:#EFE8F2; font-size:28px; text-decoration:none;
+  }
+  .attachment-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .attachment-meta{ display:flex; flex-direction:column; gap:1px; }
+  .attachment-name{
+    font-size:11.5px; font-weight:700; color:var(--vv-ink);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .attachment-size{ font-size:10.5px; color:var(--vv-gray-mid); }
+  .attachment-remove{
+    position:absolute; top:4px; right:4px;
+    width:20px; height:20px; border-radius:50%; border:none;
+    background:rgba(27,27,27,0.75); color:#fff; font-size:14px; line-height:1;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .attachment-remove:hover{ background:var(--vv-red); }
+  .attachments-upload-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .attachments-upload-btn{
+    cursor:pointer; display:inline-flex; align-items:center;
+    border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink);
+    font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase;
+    border-radius:20px; padding:8px 18px;
+  }
+  .attachments-hint{ font-size:12px; color:var(--vv-gray-mid); }
+  .attachments-error{ margin:10px 0 0; font-size:12.5px; color:var(--vv-red-deep); }
+  .attachment-row{ font-size:13.5px; padding:6px 0; border-bottom:1px solid #F0EAF4; }
+  .attachment-row:last-child{ border-bottom:none; }
+  .attachment-row a{ color:var(--vv-squid-ink); font-weight:600; }
+  .attachment-remove-link{ color:var(--vv-red-deep) !important; font-weight:400 !important; font-size:12px; }
+
   /* ---- sections + cards ---- */
   .section-wrap{ margin-bottom:28px; }
   .section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
@@ -259,6 +302,21 @@
         <div class="ship-field"><label>Date</label><input id="f-date" placeholder="M/D/Y"></div>
       </section>
 
+      <section class="attachments-card">
+        <div class="field-label"><span class="dash">—</span>Photos &amp; Files</div>
+
+        <div class="attachments-list" id="attachments-grid"></div>
+
+        <div class="attachments-upload-row" id="attachments-upload-row">
+          <label class="attachments-upload-btn" id="attachments-upload-label">
+            <span id="attachments-upload-text">Add photos or files</span>
+            <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">
+          </label>
+          <span class="attachments-hint" id="attachments-hint">Up to 15 MB per file.</span>
+        </div>
+        <p class="attachments-error" id="attachments-error" style="display:none;"></p>
+      </section>
+
       <div id="sections-top"></div>
 
       <div class="callout stripe-black">
@@ -355,11 +413,15 @@
   // Supabase config — fill these in to sync across devices instead of
   // storing everything only in this one browser. Both values are safe to
   // put directly in client-side code: the anon key only works because of
-  // the Row Level Security policies in supabase/schema.sql, same as the
-  // Next.js version of this app.
-  //   1. Create a Supabase project (supabase.com).
-  //   2. SQL Editor → run supabase/schema.sql from the project.
-  //   3. Project Settings → API → paste the Project URL and anon key below.
+  // the Row Level Security policies below.
+  //   Table:  public.handovers  (id, ship, outgoing, incoming, handover_date,
+  //           fields, attachments, status, submitted_at, updated_at)
+  //   Bucket: handover-files
+  //   Run supabase_setup_handovers.sql once (RLS + realtime + storage
+  //   policies) — your table/columns already exist, that script just
+  //   grants access and turns on sync.
+  //   Then paste your Project URL and anon key below
+  //   (Project Settings → API).
   // ---------------------------------------------------------------
   var SUPABASE_URL = "YOUR_SUPABASE_URL";       // e.g. "https://abcdefgh.supabase.co"
   var SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
@@ -389,46 +451,52 @@
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){ /* storage unavailable */ }
   }
 
+  // Table: public.handovers — id, ship, outgoing, incoming, handover_date,
+  // fields, attachments, status, submitted_at, updated_at.
   function rowToRecord(row){
     return {
       ship: row.ship || "",
-      outgoing: row.outgoing_chef || "",
-      incoming: row.incoming_chef || "",
+      outgoing: row.outgoing || "",
+      incoming: row.incoming || "",
       date: row.handover_date || "",
       fields: Object.assign(emptyFields(), row.fields || {}),
       status: row.status || "draft",
       submittedAt: row.submitted_at || null,
+      attachments: row.attachments || [],
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     };
   }
   function recordToRow(venueKey, rec){
     return {
-      venue_key: venueKey,
+      id: venueKey,
       ship: rec.ship || "",
-      outgoing_chef: rec.outgoing || "",
-      incoming_chef: rec.incoming || "",
+      outgoing: rec.outgoing || "",
+      incoming: rec.incoming || "",
       handover_date: rec.date || "",
       fields: rec.fields || emptyFields(),
       status: rec.status || "draft",
       submitted_at: rec.submittedAt || null,
+      attachments: rec.attachments || [],
+      updated_at: new Date().toISOString(),
     };
   }
 
-  // Load one venue's record.
-  async function loadRecord(venueKey){
+  // Fetch one venue's record — always returns a usable record (never null),
+  // same as the pasted snippet's fetchHandoverRecord pattern.
+  async function fetchHandoverRecord(venueKey){
     if (SUPABASE_CONFIGURED){
-      var res = await sb.from("venue_handovers").select("*").eq("venue_key", venueKey).maybeSingle();
-      if (res.error){ console.error(res.error); return null; }
-      return res.data ? rowToRecord(res.data) : null;
+      var res = await sb.from("handovers").select("*").eq("id", venueKey).maybeSingle();
+      if (res.error){ console.error(res.error); return emptyRecord(); }
+      return res.data ? rowToRecord(res.data) : emptyRecord();
     }
     var all = localLoadAll();
-    return all[venueKey] || null;
+    return all[venueKey] || emptyRecord();
   }
 
   // Save one venue's record (full upsert).
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
-      var res = await sb.from("venue_handovers").upsert(recordToRow(venueKey, rec), { onConflict: "venue_key" });
+      var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
       if (res.error) console.error(res.error);
       return;
     }
@@ -440,13 +508,13 @@
   // List records, optionally filtered by status ("draft" | "submitted" | null for all).
   async function listRecords(statusFilter){
     if (SUPABASE_CONFIGURED){
-      var query = sb.from("venue_handovers").select("*").order("updated_at", { ascending: false });
+      var query = sb.from("handovers").select("*").order("updated_at", { ascending: false });
       if (statusFilter) query = query.eq("status", statusFilter);
       var res = await query;
       if (res.error){ console.error(res.error); return []; }
       return (res.data || []).map(function(row){
         var rec = rowToRecord(row);
-        rec.venueKey = row.venue_key;
+        rec.venueKey = row.id;
         return rec;
       });
     }
@@ -463,7 +531,7 @@
     return out;
   }
   function emptyRecord(){
-    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, updatedAt:Date.now() };
+    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, attachments:[], updatedAt:Date.now() };
   }
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
@@ -569,6 +637,7 @@
   // HANDOVER FORM
   // ---------------------------------------------------------------
   var currentVenueKey = "default-venue";
+  var currentAttachments = [];
   var saveTimer = null;
   var currentChannel = null;
   var skipNextRealtime = false; // our own writes also fire a realtime event — ignore it once
@@ -650,6 +719,110 @@
       reopenBtn.style.display = "none";
       lockedNote.style.display = "none";
     }
+
+    currentAttachments = rec.attachments || [];
+    renderFileListUI(currentAttachments, locked);
+  }
+
+  var ATTACHMENTS_BUCKET = "handover-files"; // matches your existing Storage bucket
+
+  function formatBytes(bytes){
+    if (!bytes && bytes !== 0) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024*1024) return Math.round(bytes/1024) + " KB";
+    return (bytes/(1024*1024)).toFixed(1) + " MB";
+  }
+
+  function fileToDataUrl(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Upload a FileList — to Supabase Storage when configured, or inline as
+  // base64 when running local-only. Returns the array of attachment records
+  // to append (skips and reports anything over the size cap).
+  async function uploadFiles(venueKey, fileList){
+    var files = Array.from(fileList || []);
+    var maxBytes = SUPABASE_CONFIGURED ? 15*1024*1024 : 2*1024*1024;
+    var uploaded = [];
+    var errEl = document.getElementById("attachments-error");
+    errEl.style.display = "none";
+
+    for (var i = 0; i < files.length; i++){
+      var file = files[i];
+      if (file.size > maxBytes){
+        errEl.textContent = '"' + file.name + '" is over ' + (SUPABASE_CONFIGURED ? "15 MB" : "2 MB") + ' and was skipped.';
+        errEl.style.display = "block";
+        continue;
+      }
+
+      if (SUPABASE_CONFIGURED){
+        var path = venueKey + "/" + Date.now() + "_" + file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        var up = await sb.storage.from(ATTACHMENTS_BUCKET).upload(path, file, { contentType: file.type || undefined });
+        if (up.error){
+          console.error("Upload error:", up.error.message);
+          errEl.textContent = (up.error.message || "").indexOf("Bucket not found") !== -1
+            ? "Storage bucket isn't set up yet — run supabase_setup_handovers.sql."
+            : 'Couldn\'t upload "' + file.name + '": ' + (up.error.message || "unknown error");
+          errEl.style.display = "block";
+          continue;
+        }
+        var pub = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
+        uploaded.push({ path: path, url: (pub.data && pub.data.publicUrl) || "", name: file.name, type: file.type || "", size: file.size });
+      } else {
+        try{
+          var dataUrl = await fileToDataUrl(file);
+          uploaded.push({ path: null, url: dataUrl, name: file.name, type: file.type || "", size: file.size });
+        }catch(e){
+          console.error(e);
+          errEl.textContent = 'Couldn\'t read "' + file.name + '".';
+          errEl.style.display = "block";
+        }
+      }
+    }
+    return uploaded;
+  }
+
+  // Simple 📎 list — matches the plain-list style rather than thumbnail tiles.
+  function renderFileListUI(files, locked){
+    var listEl = document.getElementById("attachments-grid");
+    if (!listEl) return;
+    document.getElementById("attachments-upload-row").style.display = locked ? "none" : "flex";
+    document.getElementById("attachments-hint").textContent = SUPABASE_CONFIGURED
+      ? "Up to 15 MB per file."
+      : "Up to 2 MB per file (saved on this device only).";
+
+    if (!files || files.length === 0){
+      listEl.innerHTML = '<em style="color:var(--vv-gray-mid); font-size:13px;">No files attached yet.</em>';
+      return;
+    }
+    listEl.innerHTML = files.map(function(f, idx){
+      var sizeTxt = formatBytes(f.size);
+      var removeLink = locked ? "" : ' · <a href="#" data-remove-idx="' + idx + '" class="attachment-remove-link">remove</a>';
+      return '<div class="attachment-row">📎 <a href="' + f.url + '" target="_blank" rel="noopener">' + escapeHtml(f.name) + '</a>' +
+        (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '</div>';
+    }).join("");
+
+    if (!locked){
+      listEl.querySelectorAll("[data-remove-idx]").forEach(function(a){
+        a.addEventListener("click", async function(e){
+          e.preventDefault();
+          var idx = parseInt(a.getAttribute("data-remove-idx"), 10);
+          var removed = currentAttachments[idx];
+          currentAttachments = currentAttachments.slice(0, idx).concat(currentAttachments.slice(idx + 1));
+          renderFileListUI(currentAttachments, locked);
+          await persistCurrent({ attachments: currentAttachments });
+          if (SUPABASE_CONFIGURED && removed && removed.path){
+            var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove([removed.path]);
+            if (del.error) console.error(del.error); // best-effort; harmless if it fails
+          }
+        });
+      });
+    }
   }
 
   var syncDot = null, syncLabel = null;
@@ -681,8 +854,9 @@
 
     setSyncStatus(SUPABASE_CONFIGURED ? "saving" : "live");
 
-    var rec = await loadRecord(venueKey);
-    if (!rec){ rec = emptyRecord(); await saveRecord(venueKey, rec); }
+    var rec = await fetchHandoverRecord(venueKey);
+    var all0 = SUPABASE_CONFIGURED ? null : localLoadAll();
+    if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec); // seed a blank row locally so it shows up in lists
     if (venueKey !== currentVenueKey) return; // navigated away while loading
 
     applyRecordToForm(venueKey, rec);
@@ -701,10 +875,10 @@
     // Live sync: if someone else edits this same venue elsewhere, reflect it here.
     if (SUPABASE_CONFIGURED){
       currentChannel = sb
-        .channel("venue_handovers:" + venueKey)
+        .channel("handovers:" + venueKey)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "venue_handovers", filter: "venue_key=eq." + venueKey },
+          { event: "*", schema: "public", table: "handovers", filter: "id=eq." + venueKey },
           function(payload){
             if (skipNextRealtime){ skipNextRealtime = false; return; }
             if (!payload.new) return;
@@ -731,13 +905,31 @@
 
   async function persistCurrent(overrides){
     var venueKey = currentVenueKey;
-    var existing = (await loadRecord(venueKey)) || emptyRecord();
+    var existing = await fetchHandoverRecord(venueKey);
     var vals = currentFormValues();
-    var next = Object.assign({}, existing, vals, overrides || {}, { updatedAt: Date.now() });
+
+    // Pick up any attachments passed in explicitly (e.g. after a remove);
+    // otherwise fall back to whatever's already on the record.
+    var attachments = (overrides && overrides.attachments) || existing.attachments || [];
+
+    // If the file input has a pending selection, upload it now and fold the
+    // results into this same save — one combined operation, same as typing
+    // a field and having it autosave.
+    var fileInput = document.getElementById("file-input");
+    if (fileInput && fileInput.files && fileInput.files.length > 0){
+      var newFiles = await uploadFiles(venueKey, fileInput.files);
+      attachments = attachments.concat(newFiles);
+      fileInput.value = "";
+    }
+
+    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
     if (SUPABASE_CONFIGURED) skipNextRealtime = true; // our own write — don't re-apply it via the subscription
     await saveRecord(venueKey, next);
+
+    currentAttachments = attachments;
     document.getElementById("footer-date").textContent = next.date || "—";
     document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
+    renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
     setSyncStatus("live");
     showToast("Saved");
     return next;
@@ -750,6 +942,11 @@
   }
 
   document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
+
+  // File input: save immediately on selection (uploads + record save as one step).
+  document.getElementById("file-input").addEventListener("change", function(){
+    persistCurrent();
+  });
 
   document.getElementById("venue-code-open").addEventListener("click", function(){
     var slug = slugify(document.getElementById("venue-code-input").value);
