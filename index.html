@@ -437,12 +437,13 @@
   });
 
   document.getElementById("btn-create").addEventListener("click", function(){
-    var name = window.prompt('Name this venue / outlet (e.g. "Razzle Dazzle — Resilient Lady"):');
-    if (name === null) return;
-    var slug = slugify(name);
+    // No prompt — jump straight into a blank form. The venue code is just an
+    // internal handle; the chef names the actual venue on the form itself.
+    var slug = "handover-" + Date.now().toString(36);
     var all = loadAll();
-    if (!all[slug]) { all[slug] = emptyRecord(); saveAll(all); }
-    window.location.hash = "handover?v=" + encodeURIComponent(slug);
+    all[slug] = emptyRecord();
+    saveAll(all);
+    window.location.hash = "handover?v=" + encodeURIComponent(slug) + "&new=1";
   });
 
   document.getElementById("btn-open").addEventListener("click", function(){
@@ -516,6 +517,15 @@
     var locked = rec.status === "submitted" && !admin;
     document.getElementById("handover-fieldset").disabled = locked;
     document.getElementById("handover-admin-flag").style.display = admin ? "inline" : "none";
+
+    var hashParams = (function(){
+      var h = window.location.hash.replace(/^#/, "");
+      var qIndex = h.indexOf("?");
+      return new URLSearchParams(qIndex === -1 ? "" : h.slice(qIndex + 1));
+    })();
+    if (hashParams.get("new") === "1" && !locked){
+      document.getElementById("f-ship").focus();
+    }
 
     var badge = document.getElementById("handover-status-badge");
     badge.textContent = rec.status === "submitted" ? "Submitted" : "Draft";
