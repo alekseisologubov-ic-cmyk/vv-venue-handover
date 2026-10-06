@@ -78,7 +78,7 @@
   .home-main{max-width:1120px;margin:0 auto;padding:36px 24px 60px;}
 
   /* ---- home dashboard ---- */
-  .nav-grid{ display:grid; grid-template-columns:repeat(2, minmax(260px, 1fr)); gap:24px; }
+  .nav-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:24px; }
   @media (max-width:720px){ .nav-grid{ grid-template-columns:1fr; } }
   .nav-card{
     background:var(--vv-white); border:none; border-radius:10px; text-align:left;
@@ -713,9 +713,11 @@
     var btn = document.getElementById("btn-admin-toggle");
     btn.textContent = "Admin mode " + (admin ? "on" : "off");
     btn.className = "admin-pill " + (admin ? "on" : "off");
-    document.getElementById("manage-desc").textContent = admin
-      ? "Browse every venue, draft or submitted, and reopen as needed."
-      : "Enable admin mode below to browse and reopen all venues.";
+
+    // Manage Venues is an admin-only tile — it simply doesn't exist on the
+    // home screen until admin mode is on, rather than showing disabled.
+    document.getElementById("btn-manage").style.display = admin ? "flex" : "none";
+    document.getElementById("manage-desc").textContent = "Browse every venue, draft or submitted, and reopen as needed.";
   }
 
   document.getElementById("btn-admin-toggle").addEventListener("click", function(){
