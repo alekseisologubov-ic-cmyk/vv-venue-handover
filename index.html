@@ -642,7 +642,7 @@
       renderHandover(r.params.get("v") || "");
     } else if (r.path === "submitted"){
       showView("submitted");
-      renderSubmitted(r.params.get("filter") === "all" ? "all" : "submitted");
+      renderSubmitted(["all", "draft"].indexOf(r.params.get("filter")) !== -1 ? r.params.get("filter") : "submitted");
     } else {
       showView("home");
       renderHome();
@@ -678,7 +678,7 @@
   });
 
   document.getElementById("btn-open").addEventListener("click", function(){
-    window.location.hash = "handover";
+    window.location.hash = "submitted?filter=draft";
   });
 
   document.getElementById("btn-submitted").addEventListener("click", function(){
@@ -1148,11 +1148,20 @@
 
     var admin = readAdmin();
     var showingAll = filter === "all";
+    var showingDraft = filter === "draft";
+    // "All" is the admin overview (every venue, any status); Draft is just
+    // the normal "continue what I started" flow, open to anyone.
     var blocked = showingAll && !admin;
 
-    document.getElementById("submitted-title").textContent = showingAll ? "Manage Venues" : "Submitted Handovers";
+    document.getElementById("submitted-title").textContent = showingAll
+      ? "Manage Venues"
+      : showingDraft
+      ? "Open Handovers"
+      : "Submitted Handovers";
     document.getElementById("submitted-subtitle").textContent = showingAll
       ? "Every venue on record, draft or submitted."
+      : showingDraft
+      ? "Handovers that have been started but not submitted yet."
       : "Completed handovers and their follow-up points.";
     document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
 
@@ -1161,7 +1170,8 @@
     if (blocked) return;
 
     listEl.innerHTML = '<p class="list-empty">Loading…</p>';
-    var rows = await listRecords(showingAll ? null : "submitted");
+    var statusFilter = showingAll ? null : showingDraft ? "draft" : "submitted";
+    var rows = await listRecords(statusFilter);
     listEl.innerHTML = "";
 
     if (rows.length === 0){
