@@ -154,10 +154,12 @@
   .btn-submit:hover{ background:var(--vv-red-light); }
   .btn-review{ border:none; background:var(--vv-squid-ink); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .btn-review:hover{ background:var(--vv-squid-ink-light); }
-  .btn-pdf{ border:1px solid #1E7A3A; background:#1E7A3A; color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
-  .btn-pdf:hover{ background:#2E9E4F; }
-  .btn-sendback{ border:1px solid var(--vv-red); background:#fff; color:var(--vv-red); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
-  .btn-sendback:hover{ background:var(--vv-red); color:#fff; }
+  .btn-pdf{ border:1px solid #D9CBE2; background:#fff; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-pdf:hover{ background:#F5F1F7; }
+  .btn-sendback{ border:none; background:var(--vv-red); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-sendback:hover{ background:var(--vv-red-light); }
+  .btn-approve{ border:1px solid #1E7A3A; background:#1E7A3A; color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-approve:hover{ background:#2E9E4F; }
   .btn-outline{ border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .locked-note{ font-size:12.5px; color:var(--vv-gray-mid); }
 
@@ -443,7 +445,7 @@
       <button class="btn-pdf" id="btn-pdf-export" style="display:none;">📄 Save as PDF / Print</button>
       <button class="btn-review" id="btn-send-review-handover">Send for Review</button>
       <button class="btn-sendback" id="btn-send-back-handover" style="display:none;">Send back to open</button>
-      <button class="btn-submit" id="btn-submit-handover" style="display:none;">Approve &amp; Submit</button>
+      <button class="btn-approve" id="btn-submit-handover" style="display:none;">Approve &amp; Submit</button>
       <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
       <span class="locked-note" id="locked-note" style="display:none;"></span>
       <button type="button" class="list-row-delete" id="btn-delete-handover" style="display:none;">Delete handover</button>
