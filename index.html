@@ -229,7 +229,7 @@
   .card.main{ border-top:3px solid var(--vv-red); }
   .field-label{ font-weight:700; text-transform:uppercase; letter-spacing:0.06em; font-size:11.5px; color:var(--vv-squid-ink); margin-bottom:8px; display:flex; align-items:center; gap:6px; }
   .field-label .dash{ color:var(--vv-red); font-weight:900; }
-  textarea{ width:100%; min-height:72px; resize:vertical; border:1px solid #E3D8EA; border-radius:6px; padding:8px 10px; font-family:inherit; font-size:14px; color:inherit; background:#FBFAFC; flex:1; }
+  textarea{ width:100%; min-height:72px; resize:vertical; border:1px solid #E3D8EA; border-radius:6px; padding:8px 10px; font-family:inherit; font-size:14px; color:inherit; background:#FBFAFC; flex:1; overflow-y:hidden; }
   textarea:focus{ outline:none; border-color:var(--vv-red); }
 
   /* per-field attachments */
@@ -994,6 +994,19 @@
     toggle.textContent = display || "Select venue(s)…";
   }
 
+  // Grows a textarea to fit all of its content, no internal scrollbar — so a
+  // long comment is fully visible both on screen and in the printed/PDF view,
+  // instead of being clipped inside a fixed-height box.
+  function autoGrowTextarea(el){
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = (el.scrollHeight + 2) + "px";
+  }
+  function autoGrowAllTextareas(){
+    document.querySelectorAll("#handover-fieldset textarea").forEach(autoGrowTextarea);
+    autoGrowTextarea(document.getElementById("f-reviewer-comments"));
+  }
+
   function applyRecordToForm(venueKey, rec){
     updateVenueToggleLabel(venueKey);
 
@@ -1089,6 +1102,10 @@
     document.querySelectorAll(".field-attach-row").forEach(function(el){
       el.style.display = locked ? "none" : "flex";
     });
+
+    // Every field just got (re)populated above — size each box to fit its
+    // full content now, not just as the person types later.
+    autoGrowAllTextareas();
   }
 
   var ATTACHMENTS_BUCKET = "handover-files";
@@ -1553,8 +1570,14 @@
     saveTimer = setTimeout(function(){ persistCurrent(); showToast("Saved"); }, 500);
   }
 
-  document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
-  document.getElementById("f-reviewer-comments").addEventListener("input", scheduleSave);
+  document.getElementById("handover-fieldset").addEventListener("input", function(e){
+    if (e.target && e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
+    scheduleSave();
+  });
+  document.getElementById("f-reviewer-comments").addEventListener("input", function(e){
+    autoGrowTextarea(e.target);
+    scheduleSave();
+  });
 
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
