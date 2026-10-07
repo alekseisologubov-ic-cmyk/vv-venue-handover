@@ -1160,4 +1160,438 @@
       try {
         var textContent = "";
         if (a.url.indexOf("data:") === 0) {
-          var base64Str = a
+          var base64Str = a.url.split(",")[1];
+          textContent = decodeURIComponent(escape(atob(base64Str)));
+        } else {
+          var resCsv = await fetch(a.url);
+          textContent = await resCsv.text();
+        }
+
+        var lines = textContent.trim().split(/\r\n|\n/);
+        if (lines.length > 0) {
+          var tableHtml = '<div style="width:100%; max-height:70vh; overflow:auto;"><table class="doc-preview-table">';
+          lines.forEach(function(line, rowIdx){
+            var cells = line.split(",");
+            tableHtml += '<tr>';
+            cells.forEach(function(cell){
+              var tag = rowIdx === 0 ? 'th' : 'td';
+              tableHtml += '<' + tag + '>' + escapeHtml(cell.replace(/^"|"$/g, '')) + '</' + tag + '>';
+            });
+            tableHtml += '</tr>';
+          });
+          tableHtml += '</table></div>';
+          body.innerHTML = tableHtml;
+          return;
+        }
+      } catch(e) {
+        console.error("CSV parse error", e);
+      }
+    }
+
+    // Fallback if unsupported format
+    var msg = document.createElement("div");
+    msg.className = "attachment-modal-unsupported";
+    msg.textContent = "This file type can't be previewed here — use \"Open in new tab\" above.";
+    body.innerHTML = "";
+    body.appendChild(msg);
+  }
+
+  function closeAttachmentModal(){
+    document.getElementById("attachment-modal").style.display = "none";
+    document.getElementById("attachment-modal-body").innerHTML = "";
+    revokeCurrentObjectUrl();
+  }
+  document.getElementById("attachment-modal-close").addEventListener("click", closeAttachmentModal);
+  document.getElementById("attachment-modal-backdrop").addEventListener("click", closeAttachmentModal);
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape" && document.getElementById("attachment-modal").style.display !== "none") closeAttachmentModal();
+  });
+
+  function formatBytes(bytes){
+    if (!bytes && bytes !== 0) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024*1024) return Math.round(bytes/1024) + " KB";
+    return (bytes/(1024*1024)).toFixed(1) + " MB";
+  }
+
+  function fileToDataUrl(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadFiles(venueKey, fileList){
+    var files = Array.from(fileList || []);
+    var maxBytes = SUPABASE_CONFIGURED ? 15*1024*1024 : 2*1024*1024;
+    var uploaded = [];
+    var errEl = document.getElementById("attachments-error");
+    errEl.style.display = "none";
+
+    for (var i = 0; i < files.length; i++){
+      var file = files[i];
+      if (file.size > maxBytes){
+        errEl.textContent = '"' + file.name + '" is over ' + (SUPABASE_CONFIGURED ? "15 MB" : "2 MB") + ' and was skipped.';
+        errEl.style.display = "block";
+        continue;
+      }
+
+      if (SUPABASE_CONFIGURED){
+        var path = venueKey + "/" + Date.now() + "_" + file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        var up = await sb.storage.from(ATTACHMENTS_BUCKET).upload(path, file, { contentType: file.type || undefined });
+        if (up.error){
+          console.error("Upload error:", up.error.message);
+          errEl.textContent = (up.error.message || "").indexOf("Bucket not found") !== -1
+            ? "Storage bucket isn't set up yet — run supabase_setup_handovers.sql."
+            : 'Couldn\'t upload "' + file.name + '": ' + (up.error.message || "unknown error");
+          errEl.style.display = "block";
+          continue;
+        }
+        var pub = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
+        uploaded.push({ path: path, url: (pub.data && pub.data.publicUrl) || "", name: file.name, type: file.type || "", size: file.size });
+      } else {
+        try{
+          var dataUrl = await fileToDataUrl(file);
+          uploaded.push({ path: null, url: dataUrl, name: file.name, type: file.type || "", size: file.size });
+        }catch(e){
+          console.error(e);
+          errEl.textContent = 'Couldn\'t read "' + file.name + '".';
+          errEl.style.display = "block";
+        }
+      }
+    }
+    return uploaded;
+  }
+
+  function renderFileListUI(files, locked){
+    var listEl = document.getElementById("attachments-grid");
+    if (!listEl) return;
+    document.getElementById("attachments-upload-row").style.display = locked ? "none" : "flex";
+    document.getElementById("attachments-hint").textContent = SUPABASE_CONFIGURED
+      ? "Up to 15 MB per file."
+      : "Up to 2 MB per file (saved on this device only).";
+
+    if (!files || files.length === 0){
+      listEl.innerHTML = '<em style="color:var(--vv-gray-mid); font-size:13px;">No files attached yet.</em>';
+      return;
+    }
+    listEl.innerHTML = files.map(function(f, idx){
+      var isImg = (f.type && f.type.indexOf("image/") === 0) || 
+                  (f.url && (f.url.indexOf("data:image/") === 0 || f.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
+      var sizeTxt = formatBytes(f.size);
+      var removeLink = locked ? "" : ' · <a href="#" data-remove-idx="' + idx + '" class="attachment-remove-link">remove</a>';
+      
+      var imgPreview = isImg
+        ? '<a href="#" data-open-main="' + idx + '"><img src="' + f.url + '" style="width:40px; height:40px; object-fit:cover; border-radius:4px; border:1px solid #E3D8EA; vertical-align:middle; margin-right:6px;"></a>'
+        : '';
+
+      return '<div class="attachment-row">' + imgPreview + '📎 <a href="#" data-open-main="' + idx + '">' + escapeHtml(f.name) + '</a>' +
+        (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '</div>';
+    }).join("");
+
+    listEl.querySelectorAll("[data-open-main]").forEach(function(a){
+      a.addEventListener("click", function(e){
+        e.preventDefault();
+        openAttachmentModal(currentAttachments[parseInt(a.getAttribute("data-open-main"), 10)]);
+      });
+    });
+
+    if (!locked){
+      listEl.querySelectorAll("[data-remove-idx]").forEach(function(a){
+        a.addEventListener("click", async function(e){
+          e.preventDefault();
+          var idx = parseInt(a.getAttribute("data-remove-idx"), 10);
+          var removed = currentAttachments[idx];
+          currentAttachments = currentAttachments.slice(0, idx).concat(currentAttachments.slice(idx + 1));
+          renderFileListUI(currentAttachments, locked);
+          await persistCurrent({ attachments: currentAttachments });
+          if (SUPABASE_CONFIGURED && removed && removed.path){
+            var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove([removed.path]);
+            if (del.error) console.error(del.error);
+          }
+        });
+      });
+    }
+  }
+
+  var syncDot = null, syncLabel = null;
+  function setSyncStatus(mode){
+    if (!syncDot) syncDot = document.querySelector(".sync-bar .dot");
+    if (!syncLabel) syncLabel = document.getElementById("sync-label");
+    if (!syncDot) return;
+    syncDot.className = "dot " + (mode === "error" ? "error" : mode === "saving" ? "saving" : mode === "live" ? "live" : "off");
+    if (syncLabel){
+      syncLabel.textContent = mode === "error"
+        ? "Couldn't save — check your connection"
+        : SUPABASE_CONFIGURED
+        ? (mode === "saving" ? "Saving…" : "Synced — live for anyone with this venue link")
+        : "Saved on this device";
+    }
+  }
+
+  async function renderHandover(venueKey){
+    currentVenueKey = venueKey;
+    unsubscribeCurrentChannel();
+
+    var fieldset = document.getElementById("handover-fieldset");
+    var noVenueNote = document.getElementById("no-venue-note");
+
+    if (!venueKey){
+      updateVenueToggleLabel("");
+      document.getElementById("handover-title").textContent = "Venue Handover";
+      document.getElementById("handover-status-badge").style.display = "none";
+      document.getElementById("btn-submit-handover").style.display = "none";
+      document.getElementById("btn-reopen-handover").style.display = "none";
+      document.getElementById("locked-note").style.display = "none";
+      document.getElementById("btn-delete-handover").style.display = "none";
+      fieldset.style.display = "none";
+      if (noVenueNote) noVenueNote.style.display = "block";
+      setSyncStatus(SUPABASE_CONFIGURED ? "live" : "live");
+      return;
+    }
+    fieldset.style.display = "";
+    if (noVenueNote) noVenueNote.style.display = "none";
+    document.getElementById("handover-status-badge").style.display = "";
+
+    var bannerWrap = document.getElementById("handover-config-banner-wrap");
+    if (bannerWrap){
+      bannerWrap.innerHTML = SUPABASE_CONFIGURED
+        ? ""
+        : '<div class="config-banner"><strong>Supabase isn\u2019t connected.</strong> ' +
+          "This handover is saving to this device only \u2014 fill in <code>SUPABASE_URL</code> / " +
+          "<code>SUPABASE_ANON_KEY</code> near the top of the script to sync across devices.</div>";
+    }
+
+    setSyncStatus(SUPABASE_CONFIGURED ? "saving" : "live");
+
+    var rec = await fetchHandoverRecord(venueKey);
+    var all0 = SUPABASE_CONFIGURED ? null : localLoadAll();
+    if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec);
+    if (venueKey !== currentVenueKey) return;
+
+    applyRecordToForm(venueKey, rec);
+    setSyncStatus("live");
+
+    var hashParams = (function(){
+      var h = window.location.hash.replace(/^#/, "");
+      var qIndex = h.indexOf("?");
+      return new URLSearchParams(qIndex === -1 ? "" : h.slice(qIndex + 1));
+    })();
+    var locked = rec.status === "submitted" && !readAdmin();
+    if (hashParams.get("new") === "1" && !locked){
+      document.getElementById("f-ship").focus();
+    }
+
+    if (SUPABASE_CONFIGURED){
+      currentChannel = sb
+        .channel("handovers:" + venueKey)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "handovers", filter: "id=eq." + venueKey },
+          function(payload){
+            if (skipNextRealtime){ skipNextRealtime = false; return; }
+            if (!payload.new) return;
+            applyRecordToForm(venueKey, rowToRecord(payload.new));
+          }
+        )
+        .subscribe();
+    }
+  }
+
+  function currentFormValues(){
+    var fields = {};
+    document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
+      fields[ta.getAttribute("data-field-id")] = ta.value;
+    });
+    return {
+      ship: document.getElementById("f-ship").value,
+      outgoing: document.getElementById("f-outgoing").value,
+      incoming: document.getElementById("f-incoming").value,
+      date: document.getElementById("f-date").value,
+      fields: fields
+    };
+  }
+
+  async function persistCurrent(overrides){
+    var venueKey = currentVenueKey;
+    var existing = await fetchHandoverRecord(venueKey);
+    var vals = currentFormValues();
+
+    var attachments = (overrides && overrides.attachments) || existing.attachments || [];
+
+    var fileInput = document.getElementById("file-input");
+    if (fileInput && fileInput.files && fileInput.files.length > 0){
+      var newFiles = await uploadFiles(venueKey, fileInput.files);
+      attachments = attachments.concat(newFiles);
+      fileInput.value = "";
+    }
+
+    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
+    if (SUPABASE_CONFIGURED) skipNextRealtime = true;
+    var ok = await saveRecord(venueKey, next);
+
+    if (!ok){
+      setSyncStatus("error");
+      showToast("Couldn't save — check your connection and try again");
+      return next;
+    }
+
+    currentAttachments = attachments;
+    document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
+    document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
+    renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
+    setSyncStatus("live");
+    showToast("Saved");
+    return next;
+  }
+
+  function scheduleSave(){
+    setSyncStatus("saving");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ persistCurrent(); }, 500);
+  }
+
+  document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
+
+  document.getElementById("file-input").addEventListener("change", function(){
+    persistCurrent();
+  });
+
+  document.getElementById("btn-submit-handover").addEventListener("click", async function(){
+    var now = new Date().toISOString();
+    await persistCurrent({ status: "submitted", submittedAt: now });
+    renderHandover(currentVenueKey);
+  });
+  document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
+    await persistCurrent({ status: "draft", submittedAt: null });
+    renderHandover(currentVenueKey);
+  });
+  document.getElementById("btn-delete-handover").addEventListener("click", async function(){
+    var btn = document.getElementById("btn-delete-handover");
+    var label = venueKeyDisplay(currentVenueKey) || currentVenueKey;
+    var isCurrentlyDeleted = btn.textContent.indexOf("Restore") === 0;
+
+    if (isCurrentlyDeleted){
+      btn.disabled = true;
+      btn.textContent = "Restoring…";
+      await restoreRecord(currentVenueKey);
+      renderHandover(currentVenueKey);
+      return;
+    }
+    if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
+    btn.disabled = true;
+    btn.textContent = "Deleting…";
+    await softDeleteRecord(currentVenueKey);
+    window.location.hash = "home";
+  });
+  document.getElementById("handover-back").addEventListener("click", function(){
+    window.location.hash = "home";
+  });
+
+  // ---------------------------------------------------------------
+  // SUBMITTED / MANAGE LIST
+  // ---------------------------------------------------------------
+  async function renderSubmitted(filter){
+    var localBanner = document.getElementById("submitted-local-banner");
+    if (localBanner) localBanner.style.display = SUPABASE_CONFIGURED ? "none" : "block";
+
+    var admin = readAdmin();
+    var showingAll = filter === "all";
+    var showingDraft = filter === "draft";
+    var blocked = showingAll && !admin;
+
+    document.getElementById("submitted-title").textContent = showingAll
+      ? "Manage Venues"
+      : showingDraft
+      ? "Open Handovers"
+      : "Submitted Handovers";
+    document.getElementById("submitted-subtitle").textContent = showingAll
+      ? "Every venue on record, draft or submitted."
+      : showingDraft
+      ? "Handovers that have been started but not submitted yet."
+      : "Completed handovers and their follow-up points.";
+    document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
+
+    var listEl = document.getElementById("submitted-list");
+    listEl.innerHTML = "";
+    if (blocked) return;
+
+    listEl.innerHTML = '<p class="list-empty">Loading…</p>';
+    var statusFilter = showingAll ? null : showingDraft ? "draft" : "submitted";
+    var rows = await listRecords(statusFilter, showingAll);
+    listEl.innerHTML = "";
+
+    if (rows.length === 0){
+      listEl.innerHTML = '<p class="list-empty">Nothing here yet.</p>';
+      return;
+    }
+
+    rows.forEach(function(r){
+      var isDeleted = !!r.deletedAt;
+      var row = document.createElement("div");
+      row.className = "list-row";
+      row.tabIndex = 0;
+      row.innerHTML =
+        '<div>' +
+          '<div class="list-row-title">' + (escapeHtml(r.ship) || escapeHtml(venueKeyDisplay(r.venueKey)) || r.venueKey) + '</div>' +
+          '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
+        '</div>' +
+        '<div class="list-row-right">' +
+          '<span class="status-badge ' + (isDeleted ? "deleted" : r.status === "submitted" ? "submitted" : "draft") + '">' +
+            (isDeleted ? "Deleted" : r.status === "submitted" ? "Submitted" : "Draft") +
+          '</span>' +
+          '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
+          (admin ? (isDeleted
+            ? '<button type="button" class="list-row-restore">Restore</button>'
+            : '<button type="button" class="list-row-delete">Delete</button>') : '') +
+        '</div>';
+
+      function goToRow(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
+      row.addEventListener("click", goToRow);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter") goToRow(); });
+
+      if (admin){
+        var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
+        if (isDeleted){
+          var restoreBtn = row.querySelector(".list-row-restore");
+          restoreBtn.addEventListener("click", async function(e){
+            e.stopPropagation();
+            restoreBtn.disabled = true;
+            restoreBtn.textContent = "Restoring…";
+            await restoreRecord(r.venueKey);
+            renderSubmitted(filter);
+          });
+        } else {
+          var delBtn = row.querySelector(".list-row-delete");
+          delBtn.addEventListener("click", async function(e){
+            e.stopPropagation();
+            if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
+            delBtn.disabled = true;
+            delBtn.textContent = "Deleting…";
+            await softDeleteRecord(r.venueKey);
+            renderSubmitted(filter);
+          });
+        }
+      }
+      listEl.appendChild(row);
+    });
+  }
+
+  function escapeHtml(s){
+    if (!s) return s;
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  document.getElementById("submitted-back").addEventListener("click", function(){
+    window.location.hash = "home";
+  });
+
+  if (!window.location.hash) window.location.hash = "home";
+  route();
+})();
+</script>
+
+</body>
+</html>
