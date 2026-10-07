@@ -286,7 +286,7 @@
 
   .status-toast{
     position:fixed; bottom:16px; right:16px; background:var(--vv-near-black); color:#fff;
-    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none;
+    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none; z-index:999;
   }
   .status-toast.show{opacity:0.92;}
 
@@ -612,6 +612,7 @@
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     };
   }
+
   function recordToRow(venueKey, rec){
     var fieldsWithReviewer = Object.assign({}, rec.fields || emptyFields(), { _reviewerComments: rec.reviewerComments || "" });
     return {
@@ -643,10 +644,19 @@
 
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
-      var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
+      var fullRow = recordToRow(venueKey, rec);
+      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
+      
+      // Fallback if schema does not support reviewer_comments column directly
       if (res.error){ 
-        console.error("Supabase Save Error:", res.error); 
-        return false; 
+        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error.message);
+        var fallbackRow = Object.assign({}, fullRow);
+        delete fallbackRow.reviewer_comments;
+        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
+        if (resFallback.error) {
+          console.error("Supabase Save Error:", resFallback.error);
+          return false;
+        }
       }
       return true;
     }
@@ -728,7 +738,7 @@
     t.textContent = text;
     t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 1000);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 3000);
   }
 
   function parseHash(){
@@ -1501,14 +1511,13 @@
     document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
     renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
     setSyncStatus("live");
-    showToast("Saved");
     return next;
   }
 
   function scheduleSave(){
     setSyncStatus("saving");
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){ persistCurrent(); }, 500);
+    saveTimer = setTimeout(function(){ persistCurrent(); showToast("Saved"); }, 500);
   }
 
   document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
@@ -1516,27 +1525,32 @@
 
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
+    showToast("Saved");
   });
 
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "in_review" });
-    window.location.hash = "submitted?filter=in_review";
+    renderHandover(currentVenueKey);
+    showToast("Handover moved to 'In Review'");
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft" });
-    window.location.hash = "submitted?filter=draft";
+    renderHandover(currentVenueKey);
+    showToast("Handover moved to 'Open Handovers'");
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
-    window.location.hash = "submitted?filter=submitted";
+    renderHandover(currentVenueKey);
+    showToast("Handover moved to 'Submitted Handovers'");
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft", submittedAt: null });
     renderHandover(currentVenueKey);
+    showToast("Handover moved to 'Open Handovers'");
   });
 
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
