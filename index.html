@@ -603,7 +603,7 @@
       incoming: row.incoming || "",
       date: row.handover_date || "",
       fields: Object.assign(emptyFields(), row.fields || {}),
-      reviewerComments: row.reviewer_comments || "",
+      reviewerComments: row.reviewer_comments || (row.fields && row.fields._reviewerComments) || "",
       status: row.status || "draft",
       submittedAt: row.submitted_at || null,
       deletedAt: row.deleted_at || null,
@@ -613,13 +613,14 @@
     };
   }
   function recordToRow(venueKey, rec){
+    var fieldsWithReviewer = Object.assign({}, rec.fields || emptyFields(), { _reviewerComments: rec.reviewerComments || "" });
     return {
       id: venueKey,
       ship: rec.ship || "",
       outgoing: rec.outgoing || "",
       incoming: rec.incoming || "",
       handover_date: rec.date || "",
-      fields: rec.fields || emptyFields(),
+      fields: fieldsWithReviewer,
       reviewer_comments: rec.reviewerComments || "",
       status: rec.status || "draft",
       submitted_at: rec.submittedAt || null,
@@ -643,7 +644,10 @@
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
       var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
-      if (res.error){ console.error(res.error); return false; }
+      if (res.error){ 
+        console.error("Supabase Save Error:", res.error); 
+        return false; 
+      }
       return true;
     }
     var all = localLoadAll();
@@ -1516,18 +1520,18 @@
 
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "in_review" });
-    renderHandover(currentVenueKey);
+    window.location.hash = "submitted?filter=in_review";
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft" });
-    renderHandover(currentVenueKey);
+    window.location.hash = "submitted?filter=draft";
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
-    renderHandover(currentVenueKey);
+    window.location.hash = "submitted?filter=submitted";
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
