@@ -151,6 +151,8 @@
   .btn-submit:hover{ background:var(--vv-red-light); }
   .btn-review{ border:none; background:var(--vv-squid-ink); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .btn-review:hover{ background:var(--vv-squid-ink-light); }
+  .btn-pdf{ border:1px solid #1E7A3A; background:#1E7A3A; color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-pdf:hover{ background:#2E9E4F; }
   .btn-sendback{ border:1px solid var(--vv-red); background:#fff; color:var(--vv-red); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .btn-sendback:hover{ background:var(--vv-red); color:#fff; }
   .btn-outline{ border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
@@ -286,19 +288,9 @@
 
   .status-toast{
     position:fixed; bottom:16px; right:16px; background:var(--vv-near-black); color:#fff;
-    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none;
+    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none; z-index:999;
   }
   .status-toast.show{opacity:0.92;}
-  .auth-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;}
-  .auth-modal-backdrop{position:absolute;inset:0;background:rgba(20,10,30,0.48);}
-  .auth-modal-box{position:relative;width:min(420px,92vw);background:#fff;border-radius:12px;padding:26px;box-shadow:0 18px 50px rgba(20,10,30,0.24);}
-  .auth-modal-box h2{margin:0 0 8px;font-family:Poppins,'Segoe UI',Arial,sans-serif;color:var(--vv-squid-ink);}
-  .auth-modal-help{margin:0 0 18px;color:var(--vv-gray-mid);font-size:13px;line-height:1.5;}
-  .auth-modal-box label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:12px 0 6px;color:var(--vv-squid-ink);}
-  .auth-modal-box input{width:100%;box-sizing:border-box;border:1px solid #D9CBE2;border-radius:8px;padding:11px 12px;font:inherit;}
-  .auth-modal-box input:focus{outline:none;border-color:var(--vv-squid-ink);}
-  .auth-modal-error{min-height:18px;margin-top:10px;color:#A3262A;font-size:13px;}
-  .auth-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;}
 
   [data-view]{ display:none; }
   [data-view].active{ display:block; }
@@ -330,6 +322,18 @@
   .doc-preview-table th, .doc-preview-table td { border: 1px solid #D9CBE2; padding: 6px 10px; text-align: left; }
   .doc-preview-table th { background: #F5F1F7; color: var(--vv-squid-ink); font-weight: 700; }
 
+  /* PRINT / PDF STYLING */
+  @media print {
+    body { background: #fff !important; color: #000 !important; }
+    header.band, footer.band, .back-link, .sync-bar, .venue-picker, .attachments-upload-row, .field-attach-row, .attachment-remove-link, .field-attach-chip-remove, .config-banner, .admin-pill, .status-toast, .attachment-modal { display: none !important; }
+    main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+    .card, .ship-card, .attachments-card { box-shadow: none !important; border: 1px solid #ccc !important; page-break-inside: avoid; }
+    textarea { border: none !important; background: transparent !important; resize: none !important; padding: 0 !important; font-size: 13px !important; }
+    textarea::placeholder { color: transparent !important; }
+    input { border: none !important; background: transparent !important; }
+    .callout { background: #333 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+
   @media (max-width:640px){ .band-inner{align-items:flex-start;} }
 </style>
 </head>
@@ -360,7 +364,7 @@
       </button>
       <button class="nav-card" id="btn-review-list">
         <span class="nav-card-title">In Review 🔒</span>
-        <span class="nav-card-desc">Passcode required. Handovers sent for reviewer check and sign-off.</span>
+        <span class="nav-card-desc">Password protected (`handover2026!`). Handovers sent for reviewer check and sign-off.</span>
       </button>
       <button class="nav-card" id="btn-submitted">
         <span class="nav-card-title">Submitted Handovers</span>
@@ -368,7 +372,7 @@
       </button>
       <button class="nav-card" id="btn-manage">
         <span class="nav-card-title">Manage Venues</span>
-        <span class="nav-card-desc" id="manage-desc">Admin access required to browse and reopen all venues.</span>
+        <span class="nav-card-desc" id="manage-desc">Enable admin mode below to browse and reopen all venues.</span>
       </button>
     </div>
     <button class="admin-pill off" id="btn-admin-toggle">Admin mode off</button>
@@ -412,6 +416,7 @@
       <span style="flex:1"></span>
       
       <!-- Workflow Action Buttons -->
+      <button class="btn-pdf" id="btn-pdf-export" style="display:none;">📄 Save as PDF / Print</button>
       <button class="btn-review" id="btn-send-review-handover">Send for Review</button>
       <button class="btn-sendback" id="btn-send-back-handover" style="display:none;">Send back to open</button>
       <button class="btn-submit" id="btn-submit-handover" style="display:none;">Approve &amp; Submit</button>
@@ -505,24 +510,6 @@
 
 <div class="status-toast" id="toast">Saved</div>
 
-<!-- Password Only Auth Modal -->
-<div class="auth-modal" id="auth-modal" style="display:none;" aria-hidden="true">
-  <div class="auth-modal-backdrop" id="auth-modal-backdrop"></div>
-  <div class="auth-modal-box" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-    <h2 id="auth-modal-title">Access Authentication</h2>
-    <p class="auth-modal-help" id="auth-modal-help">Enter the role access passcode.</p>
-    <form id="auth-form">
-      <label for="auth-password">Passcode / Password</label>
-      <input id="auth-password" type="password" placeholder="Enter access code" autocomplete="current-password" required>
-      <div class="auth-modal-error" id="auth-error" role="alert"></div>
-      <div class="auth-modal-actions">
-        <button type="button" class="btn-outline" id="auth-cancel">Cancel</button>
-        <button type="submit" class="btn-submit" id="auth-submit">Authenticate</button>
-      </div>
-    </form>
-  </div>
-</div>
-
 <div class="attachment-modal" id="attachment-modal" style="display:none;">
   <div class="attachment-modal-backdrop" id="attachment-modal-backdrop"></div>
   <div class="attachment-modal-box">
@@ -538,12 +525,6 @@
 <script>
 (function(){
   "use strict";
-
-  // Pre-configured Passcodes for Roles (NO EMAIL NEEDED)
-  var PASSCODES = {
-    admin: "admin123",
-    reviewer: "reviewer123"
-  };
 
   var SECTIONS = [
     { num:"01", title:"Operational Overview", fields:[
@@ -588,11 +569,11 @@
   ];
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
+  var ADMIN_KEY = "vv-admin-mode";
+  var REVIEWER_AUTH_KEY = "vv-reviewer-auth";
 
-  // Session-based authentication state
-  var authRole = sessionStorage.getItem("vv_auth_role") || null;
-  var authModalPurpose = null;
-  var authModalResolver = null;
+  var ADMIN_PASSWORD = "handover2026";
+  var REVIEWER_PASSWORD = "handover2026!";
 
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -627,10 +608,7 @@
     }catch(e){ return {}; }
   }
   function localSaveAll(all){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); return true; }catch(e){
-      console.error("Local storage save error:", e);
-      return false;
-    }
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){}
   }
 
   function rowToRecord(row){
@@ -649,6 +627,7 @@
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     };
   }
+
   function recordToRow(venueKey, rec){
     var fieldsWithReviewer = Object.assign({}, rec.fields || emptyFields(), { _reviewerComments: rec.reviewerComments || "" });
     return {
@@ -680,27 +659,38 @@
 
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
-      var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
+      var fullRow = recordToRow(venueKey, rec);
+      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
+      
       if (res.error){ 
-        console.error("Supabase Save Error:", res.error); 
-        return false; 
+        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error.message);
+        var fallbackRow = Object.assign({}, fullRow);
+        delete fallbackRow.reviewer_comments;
+        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
+        if (resFallback.error) {
+          console.error("Supabase Save Error:", resFallback.error);
+          return false;
+        }
       }
       return true;
     }
     var all = localLoadAll();
     all[venueKey] = rec;
-    return localSaveAll(all);
+    localSaveAll(all);
+    return true;
   }
 
   async function softDeleteRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
     rec.deletedAt = new Date().toISOString();
-    return await saveRecord(venueKey, rec);
+    await saveRecord(venueKey, rec);
+    return true;
   }
   async function restoreRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
     rec.deletedAt = null;
-    return await saveRecord(venueKey, rec);
+    await saveRecord(venueKey, rec);
+    return true;
   }
 
   async function listRecords(statusFilter, includeDeleted){
@@ -743,77 +733,17 @@
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
   }
-  function getAuthRole(){
-    return authRole;
-  }
-  function hasRole(role){
-    var roleNow = getAuthRole();
-    return roleNow === "admin" || roleNow === role;
-  }
   function readAdmin(){
-    return hasRole("admin");
+    try{ return localStorage.getItem(ADMIN_KEY) === "on"; }catch(e){ return false; }
+  }
+  function writeAdmin(on){
+    try{ localStorage.setItem(ADMIN_KEY, on ? "on" : "off"); }catch(e){}
   }
   function readReviewerAuth(){
-    return hasRole("reviewer");
+    try{ return sessionStorage.getItem(REVIEWER_AUTH_KEY) === "true"; }catch(e){ return false; }
   }
-  function updateAuthUI(){
-    var admin = readAdmin();
-    var btn = document.getElementById("btn-admin-toggle");
-    if (btn){
-      btn.textContent = admin ? "Admin mode on" : "Admin Passcode Sign In";
-      btn.className = "admin-pill " + (admin ? "on" : "off");
-      btn.setAttribute("aria-label", admin ? "Sign out of admin mode" : "Enter passcode for admin mode");
-    }
-    var reviewBtn = document.getElementById("btn-review-list");
-    if (reviewBtn){
-      reviewBtn.querySelector(".nav-card-desc").textContent = readReviewerAuth()
-        ? "Open handovers awaiting reviewer check and sign-off."
-        : "Passcode required. Reviewer/admin authorization needed.";
-    }
-  }
-
-  function openAuthModal(purpose){
-    return new Promise(function(resolve){
-      authModalPurpose = purpose;
-      authModalResolver = resolve;
-      var modal = document.getElementById("auth-modal");
-      var error = document.getElementById("auth-error");
-      var password = document.getElementById("auth-password");
-      var help = document.getElementById("auth-modal-help");
-
-      help.textContent = "Enter password/passcode for " + purpose.toUpperCase() + " access.";
-      error.textContent = "";
-      password.value = "";
-      modal.style.display = "flex";
-      modal.setAttribute("aria-hidden", "false");
-      setTimeout(function(){ password.focus(); }, 0);
-    });
-  }
-
-  function closeAuthModal(result){
-    var modal = document.getElementById("auth-modal");
-    modal.style.display = "none";
-    modal.setAttribute("aria-hidden", "true");
-    var resolver = authModalResolver;
-    authModalResolver = null;
-    authModalPurpose = null;
-    if (resolver) resolver(result);
-  }
-
-  async function ensureRole(requiredRole){
-    if (hasRole(requiredRole)) return true;
-
-    var authenticated = await openAuthModal(requiredRole);
-    if (!authenticated) return false;
-
-    return hasRole(requiredRole);
-  }
-
-  function signOut(){
-    authRole = null;
-    sessionStorage.removeItem("vv_auth_role");
-    updateAuthUI();
-    return true;
+  function writeReviewerAuth(ok){
+    try{ sessionStorage.setItem(REVIEWER_AUTH_KEY, ok ? "true" : "false"); }catch(e){}
   }
 
   var toastTimer = null;
@@ -822,7 +752,7 @@
     t.textContent = text;
     t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 1000);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 3000);
   }
 
   function parseHash(){
@@ -848,20 +778,8 @@
       showView("handover");
       renderHandover(r.params.get("v") || "");
     } else if (r.path === "submitted"){
-      var requestedFilter = ["all", "draft", "in_review", "submitted"].indexOf(r.params.get("filter")) !== -1
-        ? r.params.get("filter") : "submitted";
-      if (requestedFilter === "all" && !readAdmin()){
-        showView("home");
-        renderHome();
-        return;
-      }
-      if (requestedFilter === "in_review" && !readReviewerAuth()){
-        showView("home");
-        renderHome();
-        return;
-      }
       showView("submitted");
-      renderSubmitted(requestedFilter);
+      renderSubmitted(["all", "draft", "in_review"].indexOf(r.params.get("filter")) !== -1 ? r.params.get("filter") : "submitted");
     } else {
       showView("home");
       renderHome();
@@ -875,20 +793,26 @@
 
     var admin = readAdmin();
     var btn = document.getElementById("btn-admin-toggle");
-    btn.textContent = admin ? "Admin mode on" : "Admin Passcode Sign In";
+    btn.textContent = "Admin mode " + (admin ? "on" : "off");
     btn.className = "admin-pill " + (admin ? "on" : "off");
 
     document.getElementById("btn-manage").style.display = admin ? "flex" : "none";
     document.getElementById("manage-desc").textContent = "Browse every venue, draft or submitted, and reopen as needed.";
   }
 
-  document.getElementById("btn-admin-toggle").addEventListener("click", async function(){
+  document.getElementById("btn-admin-toggle").addEventListener("click", function(){
     if (readAdmin()){
-      signOut();
+      writeAdmin(false);
       renderHome();
       return;
     }
-    await ensureRole("admin");
+    var entered = window.prompt("Enter the admin password:");
+    if (entered === null) return;
+    if (entered !== ADMIN_PASSWORD){
+      window.alert("Incorrect password.");
+      return;
+    }
+    writeAdmin(true);
     renderHome();
   });
 
@@ -900,8 +824,16 @@
     window.location.hash = "submitted?filter=draft";
   });
 
-  document.getElementById("btn-review-list").addEventListener("click", async function(){
-    if (await ensureRole("reviewer")){
+  document.getElementById("btn-review-list").addEventListener("click", function(){
+    if (!readReviewerAuth()) {
+      var pass = window.prompt("Enter Reviewer Password:");
+      if (pass === REVIEWER_PASSWORD) {
+        writeReviewerAuth(true);
+        window.location.hash = "submitted?filter=in_review";
+      } else if (pass !== null) {
+        window.alert("Incorrect reviewer password.");
+      }
+    } else {
       window.location.hash = "submitted?filter=in_review";
     }
   });
@@ -921,11 +853,8 @@
   var currentAttachments = [];
   var currentFieldAttachments = {};
   var saveTimer = null;
-  var saveQueue = Promise.resolve();
   var currentChannel = null;
-  var dirtyKeys = {};
-  var lastLoadedRecord = null;
-  var realtimeConflict = false;
+  var skipNextRealtime = false;
 
   function unsubscribeCurrentChannel(){
     if (currentChannel && sb){
@@ -1063,10 +992,6 @@
   }
 
   function applyRecordToForm(venueKey, rec){
-    if (venueKey !== currentVenueKey) return;
-    dirtyKeys = {};
-    realtimeConflict = false;
-    lastLoadedRecord = JSON.parse(JSON.stringify(rec));
     updateVenueToggleLabel(venueKey);
 
     var joinedLabel = venueKeyDisplay(venueKey);
@@ -1099,11 +1024,14 @@
     reviewerCard.style.display = (rec.status === "in_review" || rec.status === "submitted" || rec.reviewerComments) ? "block" : "none";
     document.getElementById("f-reviewer-comments").disabled = locked;
 
+    var pdfBtn = document.getElementById("btn-pdf-export");
     var sendReviewBtn = document.getElementById("btn-send-review-handover");
     var sendBackBtn = document.getElementById("btn-send-back-handover");
     var submitBtn = document.getElementById("btn-submit-handover");
     var reopenBtn = document.getElementById("btn-reopen-handover");
     var lockedNote = document.getElementById("locked-note");
+
+    pdfBtn.style.display = (rec.status === "submitted" || rec.status === "in_review") ? "inline-block" : "none";
 
     if (rec.status === "draft") {
       sendReviewBtn.style.display = "inline-block";
@@ -1146,35 +1074,9 @@
     document.querySelectorAll(".field-attach-row").forEach(function(el){
       el.style.display = locked ? "none" : "flex";
     });
-    refreshAttachmentUrls();
   }
 
   var ATTACHMENTS_BUCKET = "handover-files";
-
-  async function ensureAttachmentUrl(a){
-    if (!a) return a;
-    if (SUPABASE_CONFIGURED && a.path){
-      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 60 * 60);
-      if (!signed.error && signed.data && signed.data.signedUrl){
-        a.url = signed.data.signedUrl;
-      }
-    }
-    return a;
-  }
-
-  async function refreshAttachmentUrls(){
-    if (!SUPABASE_CONFIGURED) return;
-    var main = currentAttachments || [];
-    var fields = currentFieldAttachments || {};
-    await Promise.all(main.map(ensureAttachmentUrl));
-    await Promise.all(Object.keys(fields).reduce(function(tasks, key){
-      return tasks.concat((fields[key] || []).map(ensureAttachmentUrl));
-    }, []));
-    renderFileListUI(currentAttachments, document.getElementById("handover-fieldset").disabled);
-    document.querySelectorAll(".field-attach-chips").forEach(function(el){
-      renderFieldAttachmentChips(el.getAttribute("data-attach-list"), document.getElementById("handover-fieldset").disabled);
-    });
-  }
 
   function renderFieldAttachmentChips(fieldId, locked){
     var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
@@ -1261,15 +1163,13 @@
   }
 
   async function openAttachmentModal(a){
-    if (!a) return;
-    await ensureAttachmentUrl(a);
     var modal = document.getElementById("attachment-modal");
     var body = document.getElementById("attachment-modal-body");
     var nameEl = document.getElementById("attachment-modal-name");
     var newTabLink = document.getElementById("attachment-modal-newtab");
 
     nameEl.textContent = a.name || "Attachment";
-    newTabLink.href = a.url || "#";
+    newTabLink.href = a.url;
     revokeCurrentObjectUrl();
     body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Loading preview…</span>';
     modal.style.display = "flex";
@@ -1425,12 +1325,13 @@
         if (up.error){
           console.error("Upload error:", up.error.message);
           errEl.textContent = (up.error.message || "").indexOf("Bucket not found") !== -1
-            ? "Storage bucket isn't set up yet."
+            ? "Storage bucket isn't set up yet — run supabase_setup_handovers.sql."
             : 'Couldn\'t upload "' + file.name + '": ' + (up.error.message || "unknown error");
           errEl.style.display = "block";
           continue;
         }
-        uploaded.push({ path: path, url: "", name: file.name, type: file.type || "", size: file.size });
+        var pub = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
+        uploaded.push({ path: path, url: (pub.data && pub.data.publicUrl) || "", name: file.name, type: file.type || "", size: file.size });
       } else {
         try{
           var dataUrl = await fileToDataUrl(file);
@@ -1523,6 +1424,7 @@
       document.getElementById("handover-title").textContent = "Venue Handover";
       document.getElementById("handover-status-badge").style.display = "none";
       document.getElementById("reviewer-card").style.display = "none";
+      document.getElementById("btn-pdf-export").style.display = "none";
       document.getElementById("btn-send-review-handover").style.display = "none";
       document.getElementById("btn-send-back-handover").style.display = "none";
       document.getElementById("btn-submit-handover").style.display = "none";
@@ -1541,7 +1443,7 @@
     var bannerWrap = document.getElementById("handover-config-banner-wrap");
     if (bannerWrap){
       bannerWrap.innerHTML = SUPABASE_CONFIGURED
-        ? '<div class="config-banner"><strong>Database Connected:</strong> Changes persist directly to Supabase.</div>'
+        ? ""
         : '<div class="config-banner"><strong>Supabase isn\u2019t connected.</strong> ' +
           "This handover is saving to this device only \u2014 fill in <code>SUPABASE_URL</code> / " +
           "<code>SUPABASE_ANON_KEY</code> near the top of the script to sync across devices.</div>";
@@ -1574,16 +1476,9 @@
           "postgres_changes",
           { event: "*", schema: "public", table: "handovers", filter: "id=eq." + venueKey },
           function(payload){
+            if (skipNextRealtime){ skipNextRealtime = false; return; }
             if (!payload.new) return;
-            var remote = rowToRecord(payload.new);
-            if (Object.keys(dirtyKeys).length){
-              realtimeConflict = true;
-              setSyncStatus("error");
-              showToast("Another user updated this handover. Your unsaved changes are being kept.");
-              lastLoadedRecord = remote;
-              return;
-            }
-            applyRecordToForm(venueKey, remote);
+            applyRecordToForm(venueKey, rowToRecord(payload.new));
           }
         )
         .subscribe();
@@ -1605,114 +1500,79 @@
     };
   }
 
-  function markDirtyFromInput(target){
-    if (!target) return;
-    var fieldId = target.getAttribute && target.getAttribute("data-field-id");
-    if (fieldId) dirtyKeys["field:" + fieldId] = true;
-    if (target.id === "f-ship") dirtyKeys.ship = true;
-    if (target.id === "f-outgoing") dirtyKeys.outgoing = true;
-    if (target.id === "f-incoming") dirtyKeys.incoming = true;
-    if (target.id === "f-date") dirtyKeys.date = true;
-    if (target.id === "f-reviewer-comments") dirtyKeys.reviewerComments = true;
-  }
+  async function persistCurrent(overrides){
+    var venueKey = currentVenueKey;
+    var existing = await fetchHandoverRecord(venueKey);
+    var vals = currentFormValues();
 
-  function mergeFormChanges(existing, vals){
-    var next = Object.assign({}, existing, { fields: Object.assign({}, existing.fields || {}) });
-    if (dirtyKeys.ship) next.ship = vals.ship;
-    if (dirtyKeys.outgoing) next.outgoing = vals.outgoing;
-    if (dirtyKeys.incoming) next.incoming = vals.incoming;
-    if (dirtyKeys.date) next.date = vals.date;
-    if (dirtyKeys.reviewerComments) next.reviewerComments = vals.reviewerComments;
-    Object.keys(dirtyKeys).forEach(function(key){
-      if (key.indexOf("field:") === 0){
-        next.fields[key.slice(6)] = vals.fields[key.slice(6)] || "";
-      }
-    });
+    var attachments = (overrides && overrides.attachments) || existing.attachments || [];
+
+    var fileInput = document.getElementById("file-input");
+    if (fileInput && fileInput.files && fileInput.files.length > 0){
+      var newFiles = await uploadFiles(venueKey, fileInput.files);
+      attachments = attachments.concat(newFiles);
+      fileInput.value = "";
+    }
+
+    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
+    if (SUPABASE_CONFIGURED) skipNextRealtime = true;
+    var ok = await saveRecord(venueKey, next);
+
+    if (!ok){
+      setSyncStatus("error");
+      showToast("Couldn't save — check your connection and try again");
+      return next;
+    }
+
+    currentAttachments = attachments;
+    document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
+    document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
+    renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
+    setSyncStatus("live");
     return next;
   }
 
-  async function persistCurrent(overrides){
-    var requestedOverrides = overrides || {};
-    var venueKey = currentVenueKey;
-    if (!venueKey) return { ok:false, record:null };
-
-    var job = async function(){
-      var existing = await fetchHandoverRecord(venueKey);
-      var vals = currentFormValues();
-      var attachments = Object.prototype.hasOwnProperty.call(requestedOverrides, "attachments")
-        ? requestedOverrides.attachments
-        : (existing.attachments || []);
-
-      var fileInput = document.getElementById("file-input");
-      if (fileInput && fileInput.files && fileInput.files.length > 0){
-        var newFiles = await uploadFiles(venueKey, fileInput.files);
-        attachments = attachments.concat(newFiles);
-        fileInput.value = "";
-      }
-
-      var next = mergeFormChanges(existing, vals);
-      next = Object.assign(next, requestedOverrides, { attachments: attachments, updatedAt: Date.now() });
-
-      var ok = await saveRecord(venueKey, next);
-
-      if (!ok){
-        setSyncStatus("error");
-        showToast("Couldn't save — check your connection and try again");
-        return { ok:false, record:next };
-      }
-
-      currentAttachments = attachments;
-      lastLoadedRecord = JSON.parse(JSON.stringify(next));
-      dirtyKeys = {};
-      realtimeConflict = false;
-      document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
-      document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
-      renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
-      setSyncStatus("live");
-      showToast("Saved");
-      return { ok:true, record:next };
-    };
-
-    saveQueue = saveQueue.then(job, job);
-    return await saveQueue;
-  }
-
-  function scheduleSave(target){
-    markDirtyFromInput(target);
+  function scheduleSave(){
     setSyncStatus("saving");
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){ persistCurrent(); }, 500);
+    saveTimer = setTimeout(function(){ persistCurrent(); showToast("Saved"); }, 500);
   }
 
-  document.getElementById("handover-fieldset").addEventListener("input", function(e){ scheduleSave(e.target); });
-  document.getElementById("f-reviewer-comments").addEventListener("input", function(e){ scheduleSave(e.target); });
+  document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
+  document.getElementById("f-reviewer-comments").addEventListener("input", scheduleSave);
 
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
+    showToast("Saved");
+  });
+
+  document.getElementById("btn-pdf-export").addEventListener("click", function(){
+    window.print();
   });
 
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
-    var result = await persistCurrent({ status: "in_review" });
-    if (!result.ok) return;
-    window.location.hash = "submitted?filter=in_review";
+    await persistCurrent({ status: "in_review" });
+    renderHandover(currentVenueKey);
+    showToast("Handover moved to 'In Review'");
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
-    var result = await persistCurrent({ status: "draft" });
-    if (!result.ok) return;
-    window.location.hash = "submitted?filter=draft";
+    await persistCurrent({ status: "draft" });
+    renderHandover(currentVenueKey);
+    showToast("Handover moved to 'Open Handovers'");
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
-    var result = await persistCurrent({ status: "submitted", submittedAt: now });
-    if (!result.ok) return;
-    window.location.hash = "submitted?filter=submitted";
+    await persistCurrent({ status: "submitted", submittedAt: now });
+    renderHandover(currentVenueKey);
+    showToast("Handover moved to 'Submitted Handovers'");
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft", submittedAt: null });
     renderHandover(currentVenueKey);
+    showToast("Handover moved to 'Open Handovers'");
   });
 
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
@@ -1723,26 +1583,14 @@
     if (isCurrentlyDeleted){
       btn.disabled = true;
       btn.textContent = "Restoring…";
-      var restored = await restoreRecord(currentVenueKey);
-      if (!restored){
-        btn.disabled = false;
-        renderHandover(currentVenueKey);
-        showToast("Couldn't restore — check your connection");
-        return;
-      }
+      await restoreRecord(currentVenueKey);
       renderHandover(currentVenueKey);
       return;
     }
     if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
     btn.disabled = true;
     btn.textContent = "Deleting…";
-    var deleted = await softDeleteRecord(currentVenueKey);
-    if (!deleted){
-      btn.disabled = false;
-      renderHandover(currentVenueKey);
-      showToast("Couldn't delete — check your connection");
-      return;
-    }
+    await softDeleteRecord(currentVenueKey);
     window.location.hash = "home";
   });
   document.getElementById("handover-back").addEventListener("click", function(){
@@ -1757,11 +1605,10 @@
     if (localBanner) localBanner.style.display = SUPABASE_CONFIGURED ? "none" : "block";
 
     var admin = readAdmin();
-    var reviewer = readReviewerAuth();
     var showingAll = filter === "all";
     var showingDraft = filter === "draft";
     var showingReview = filter === "in_review";
-    var blocked = (showingAll && !admin) || (showingReview && !reviewer);
+    var blocked = showingAll && !admin;
 
     document.getElementById("submitted-title").textContent = showingAll
       ? "Manage Venues"
@@ -1779,13 +1626,7 @@
       ? "Handovers awaiting reviewer approval and final submission."
       : "Completed handovers and their follow-up points.";
 
-    var blockedBanner = document.getElementById("submitted-blocked-banner");
-    blockedBanner.style.display = blocked ? "block" : "none";
-    if (blocked){
-      blockedBanner.textContent = showingReview
-        ? "Reviewer access code is required to view handovers in review."
-        : "Admin access code is required to browse and manage every venue.";
-    }
+    document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
 
     var listEl = document.getElementById("submitted-list");
     listEl.innerHTML = "";
@@ -1835,13 +1676,7 @@
             e.stopPropagation();
             restoreBtn.disabled = true;
             restoreBtn.textContent = "Restoring…";
-            var restored = await restoreRecord(r.venueKey);
-            if (!restored){
-              restoreBtn.disabled = false;
-              restoreBtn.textContent = "Restore";
-              showToast("Couldn't restore — check your connection");
-              return;
-            }
+            await restoreRecord(r.venueKey);
             renderSubmitted(filter);
           });
         } else {
@@ -1851,13 +1686,7 @@
             if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
             delBtn.disabled = true;
             delBtn.textContent = "Deleting…";
-            var deleted = await softDeleteRecord(r.venueKey);
-            if (!deleted){
-              delBtn.disabled = false;
-              delBtn.textContent = "Delete";
-              showToast("Couldn't delete — check your connection");
-              return;
-            }
+            await softDeleteRecord(r.venueKey);
             renderSubmitted(filter);
           });
         }
@@ -1867,13 +1696,8 @@
   }
 
   function escapeHtml(s){
-    if (s === null || s === undefined) return "";
-    return String(s)
-      .replace(/&/g,"&amp;")
-      .replace(/</g,"&lt;")
-      .replace(/>/g,"&gt;")
-      .replace(/"/g,"&quot;")
-      .replace(/'/g,"&#039;");
+    if (!s) return s;
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
 
   document.getElementById("submitted-back").addEventListener("click", function(){
@@ -1881,36 +1705,7 @@
   });
 
   if (!window.location.hash) window.location.hash = "home";
-  updateAuthUI();
   route();
-
-  document.getElementById("auth-cancel").addEventListener("click", function(){
-    closeAuthModal(false);
-  });
-  document.getElementById("auth-modal-backdrop").addEventListener("click", function(){
-    closeAuthModal(false);
-  });
-
-  // Password / Passcode Form Handler
-  document.getElementById("auth-form").addEventListener("submit", function(e){
-    e.preventDefault();
-    var password = document.getElementById("auth-password").value;
-    var error = document.getElementById("auth-error");
-
-    if (password === PASSCODES.admin) {
-      authRole = "admin";
-      sessionStorage.setItem("vv_auth_role", "admin");
-      updateAuthUI();
-      closeAuthModal(true);
-    } else if (password === PASSCODES.reviewer && authModalPurpose !== "admin") {
-      authRole = "reviewer";
-      sessionStorage.setItem("vv_auth_role", "reviewer");
-      updateAuthUI();
-      closeAuthModal(true);
-    } else {
-      error.textContent = "Invalid passcode. Please try again.";
-    }
-  });
 })();
 </script>
 
