@@ -266,6 +266,32 @@
   /* ---- submitted / manage list ---- */
   .config-banner{ background:#FFF3CD; color:#664D03; border:1px solid #FFE69C; border-radius:8px; padding:14px 18px; margin-bottom:16px; font-size:14px; }
   .list-card{ background:var(--vv-white); border-radius:10px; box-shadow:0 1px 3px rgba(20,10,30,0.08); overflow:hidden; }
+
+  /* report cards (Open/In Review/Submitted/Manage lists) */
+  .report-list{ display:flex; flex-direction:column; gap:16px; }
+  .report-card{
+    background:var(--vv-white); border-radius:10px; box-shadow:0 1px 3px rgba(20,10,30,0.08);
+    padding:20px 22px; cursor:pointer; text-align:left; border:none; width:100%; font-family:inherit;
+  }
+  .report-card-title{ font-weight:800; font-size:19px; color:var(--vv-squid-ink); margin-bottom:10px; }
+  .report-card-line{ font-size:14px; color:var(--vv-body-text); margin-bottom:4px; }
+  .report-card-line strong{ color:var(--vv-ink); }
+  .report-card-badge-row{ margin:10px 0 14px; }
+  .report-card-primary{
+    display:block; width:100%; border:none; background:var(--vv-red); color:#fff;
+    font-weight:800; font-size:14px; letter-spacing:0.03em; text-transform:uppercase;
+    border-radius:8px; padding:12px; cursor:pointer; margin-bottom:8px;
+  }
+  .report-card-primary:hover{ background:var(--vv-red-light); }
+  .report-card-secondary{
+    display:block; width:100%; border:1px solid var(--vv-red); background:#fff; color:var(--vv-red);
+    font-weight:800; font-size:13px; letter-spacing:0.03em; text-transform:uppercase;
+    border-radius:8px; padding:10px; cursor:pointer;
+  }
+  .report-card-secondary:hover{ background:var(--vv-red); color:#fff; }
+  .report-card-secondary.restore{ border-color:#1E7A3A; color:#1E7A3A; }
+  .report-card-secondary.restore:hover{ background:#1E7A3A; color:#fff; }
+  .report-card-secondary:disabled{ opacity:0.6; cursor:default; }
   .list-empty{ padding:24px 28px; color:var(--vv-gray-mid); font-size:14px; margin:0; }
   .list-row{ display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid #EFE8F2; text-decoration:none; color:inherit; cursor:pointer; background:none; border-left:none; border-right:none; border-top:none; width:100%; text-align:left; font-family:inherit; }
   .list-row:last-child{ border-bottom:none; }
@@ -502,7 +528,7 @@
     <div class="config-banner" id="submitted-blocked-banner" style="display:none;">
       Admin mode is off, so draft venues are hidden here. Turn on admin mode from the home screen to browse everything.
     </div>
-    <div class="list-card" id="submitted-list"></div>
+    <div class="report-list" id="submitted-list"></div>
   </main>
 </div>
 
@@ -1679,34 +1705,40 @@
 
     rows.forEach(function(r){
       var isDeleted = !!r.deletedAt;
-      var row = document.createElement("div");
-      row.className = "list-row";
-      row.tabIndex = 0;
-      
+      var card = document.createElement("div");
+      card.className = "report-card";
+      card.tabIndex = 0;
+
       var badgeLabel = isDeleted ? "Deleted" : (r.status === "submitted" ? "Submitted" : (r.status === "in_review" ? "In Review" : "Draft"));
       var badgeClass = isDeleted ? "deleted" : (r.status || "draft");
+      var primaryLabel = r.status === "submitted" ? "View Report" : (r.status === "in_review" ? "Review Report" : "Continue Report");
+      var title = escapeHtml(r.ship) || escapeHtml(venueKeyDisplay(r.venueKey)) || r.venueKey;
+      var submittedLine = r.submittedAt
+        ? '<div class="report-card-line"><strong>Submitted:</strong> ' + new Date(r.submittedAt).toLocaleString() + '</div>'
+        : '';
 
-      row.innerHTML =
-        '<div>' +
-          '<div class="list-row-title">' + (escapeHtml(r.ship) || escapeHtml(venueKeyDisplay(r.venueKey)) || r.venueKey) + '</div>' +
-          '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
-        '</div>' +
-        '<div class="list-row-right">' +
-          '<span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span>' +
-          '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
-          (admin ? (isDeleted
-            ? '<button type="button" class="list-row-restore">Restore</button>'
-            : '<button type="button" class="list-row-delete">Delete</button>') : '') +
-        '</div>';
+      card.innerHTML =
+        '<div class="report-card-title">' + title + '</div>' +
+        '<div class="report-card-line"><strong>From \u2192 To:</strong> ' + (escapeHtml(r.outgoing) || "—") + ' \u2192 ' + (escapeHtml(r.incoming) || "—") + '</div>' +
+        '<div class="report-card-line"><strong>Date:</strong> ' + (formatDateDisplay(r.date) || "—") + '</div>' +
+        submittedLine +
+        '<div class="report-card-badge-row"><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></div>' +
+        '<button type="button" class="report-card-primary">' + primaryLabel + '</button>' +
+        (admin ? (isDeleted
+          ? '<button type="button" class="report-card-secondary restore">Restore Report</button>'
+          : '<button type="button" class="report-card-secondary">Delete Report</button>') : '');
 
-      function goToRow(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
-      row.addEventListener("click", goToRow);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter") goToRow(); });
+      function goToCard(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
+      card.addEventListener("click", goToCard);
+      card.addEventListener("keydown", function(e){ if (e.key === "Enter") goToCard(); });
+
+      var primaryBtn = card.querySelector(".report-card-primary");
+      primaryBtn.addEventListener("click", function(e){ e.stopPropagation(); goToCard(); });
 
       if (admin){
         var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
         if (isDeleted){
-          var restoreBtn = row.querySelector(".list-row-restore");
+          var restoreBtn = card.querySelector(".report-card-secondary.restore");
           restoreBtn.addEventListener("click", async function(e){
             e.stopPropagation();
             restoreBtn.disabled = true;
@@ -1715,7 +1747,7 @@
             renderSubmitted(filter);
           });
         } else {
-          var delBtn = row.querySelector(".list-row-delete");
+          var delBtn = card.querySelector(".report-card-secondary");
           delBtn.addEventListener("click", async function(e){
             e.stopPropagation();
             if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
@@ -1726,7 +1758,7 @@
           });
         }
       }
-      listEl.appendChild(row);
+      listEl.appendChild(card);
     });
   }
 
