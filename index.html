@@ -78,7 +78,7 @@
   .home-main{max-width:1120px;margin:0 auto;padding:36px 24px 60px;}
 
   /* ---- home dashboard ---- */
-  .nav-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:24px; }
+  .nav-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:20px; }
   @media (max-width:720px){ .nav-grid{ grid-template-columns:1fr; } }
   .nav-card{
     background:var(--vv-white); border:none; border-radius:10px; text-align:left;
@@ -113,6 +113,7 @@
     padding:3px 10px; border-radius:20px;
   }
   .status-badge.draft{ background:#EDE6F2; color:var(--vv-squid-ink); }
+  .status-badge.in_review{ background:#FFF3CD; color:#856404; }
   .status-badge.submitted{ background:#E3F5E8; color:#1E7A3A; }
   .status-badge.deleted{ background:#EDEDED; color:#6B6B6B; }
   .admin-flag{ font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--vv-red-deep); }
@@ -148,6 +149,8 @@
   .venue-multi-actions{ display:flex; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid #EFE8F2; }
   .btn-submit{ border:none; background:var(--vv-red); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .btn-submit:hover{ background:var(--vv-red-light); }
+  .btn-review{ border:none; background:var(--vv-squid-ink); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-review:hover{ background:var(--vv-squid-ink-light); }
   .btn-outline{ border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .locked-note{ font-size:12.5px; color:var(--vv-gray-mid); }
 
@@ -308,7 +311,6 @@
   .attachment-modal-body iframe{ width:min(820px, 86vw); height:72vh; border:none; }
   .attachment-modal-unsupported{ text-align:center; color:var(--vv-gray-mid); font-size:14px; padding:30px; }
 
-  /* Custom table styling inside modal for previewing CSV/spreadsheet files */
   .doc-preview-table { border-collapse: collapse; width: 100%; font-size: 13px; font-family: sans-serif; }
   .doc-preview-table th, .doc-preview-table td { border: 1px solid #D9CBE2; padding: 6px 10px; text-align: left; }
   .doc-preview-table th { background: #F5F1F7; color: var(--vv-squid-ink); font-weight: 700; }
@@ -339,7 +341,11 @@
       </button>
       <button class="nav-card" id="btn-open">
         <span class="nav-card-title">Open Handovers</span>
-        <span class="nav-card-desc">Continue handovers that have been started but not submitted.</span>
+        <span class="nav-card-desc">Continue handovers that are in draft mode.</span>
+      </button>
+      <button class="nav-card" id="btn-review-list">
+        <span class="nav-card-title">In Review</span>
+        <span class="nav-card-desc">Handovers sent for reviewer check and sign-off.</span>
       </button>
       <button class="nav-card" id="btn-submitted">
         <span class="nav-card-title">Submitted Handovers</span>
@@ -389,7 +395,10 @@
         </div>
       </div>
       <span style="flex:1"></span>
-      <button class="btn-submit" id="btn-submit-handover">Submit handover</button>
+      
+      <!-- Workflow Control Buttons -->
+      <button class="btn-review" id="btn-send-review-handover">Send for Review</button>
+      <button class="btn-submit" id="btn-submit-handover" style="display:none;">Submit Handover</button>
       <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
       <span class="locked-note" id="locked-note" style="display:none;"></span>
       <button type="button" class="list-row-delete" id="btn-delete-handover" style="display:none;">Delete handover</button>
@@ -723,7 +732,7 @@
       renderHandover(r.params.get("v") || "");
     } else if (r.path === "submitted"){
       showView("submitted");
-      renderSubmitted(["all", "draft"].indexOf(r.params.get("filter")) !== -1 ? r.params.get("filter") : "submitted");
+      renderSubmitted(["all", "draft", "in_review"].indexOf(r.params.get("filter")) !== -1 ? r.params.get("filter") : "submitted");
     } else {
       showView("home");
       renderHome();
@@ -769,6 +778,10 @@
 
   document.getElementById("btn-open").addEventListener("click", function(){
     window.location.hash = "submitted?filter=draft";
+  });
+
+  document.getElementById("btn-review-list").addEventListener("click", function(){
+    window.location.hash = "submitted?filter=in_review";
   });
 
   document.getElementById("btn-submitted").addEventListener("click", function(){
@@ -948,14 +961,27 @@
     document.getElementById("handover-admin-flag").style.display = admin ? "inline" : "none";
 
     var badge = document.getElementById("handover-status-badge");
-    badge.textContent = rec.status === "submitted" ? "Submitted" : "Draft";
-    badge.className = "status-badge " + (rec.status === "submitted" ? "submitted" : "draft");
+    var statusText = rec.status === "submitted" ? "Submitted" : (rec.status === "in_review" ? "In Review" : "Draft");
+    badge.textContent = statusText;
+    badge.className = "status-badge " + (rec.status || "draft");
 
+    var sendReviewBtn = document.getElementById("btn-send-review-handover");
     var submitBtn = document.getElementById("btn-submit-handover");
     var reopenBtn = document.getElementById("btn-reopen-handover");
     var lockedNote = document.getElementById("locked-note");
 
-    if (rec.status === "submitted"){
+    if (rec.status === "draft") {
+      sendReviewBtn.style.display = "inline-block";
+      submitBtn.style.display = "none";
+      reopenBtn.style.display = "none";
+      lockedNote.style.display = "none";
+    } else if (rec.status === "in_review") {
+      sendReviewBtn.style.display = "none";
+      submitBtn.style.display = "inline-block";
+      reopenBtn.style.display = admin ? "inline-block" : "none";
+      lockedNote.style.display = "none";
+    } else if (rec.status === "submitted") {
+      sendReviewBtn.style.display = "none";
       submitBtn.style.display = "none";
       if (admin){
         reopenBtn.style.display = "inline-block";
@@ -965,10 +991,6 @@
         lockedNote.style.display = "inline";
         lockedNote.textContent = "Submitted " + (rec.submittedAt ? new Date(rec.submittedAt).toLocaleDateString() : "") + " — read-only";
       }
-    } else {
-      submitBtn.style.display = "inline-block";
-      reopenBtn.style.display = "none";
-      lockedNote.style.display = "none";
     }
 
     var deleteBtn = document.getElementById("btn-delete-handover");
@@ -1094,7 +1116,6 @@
     var isOffice = fileName.match(/\.(doc|docx|xls|xlsx|ppt|pptx)$/i);
     var isCsv = fileName.endsWith(".csv") || type === "text/csv";
 
-    // 1. Image preview
     if (isImg){
       var src = a.url;
       try {
@@ -1111,7 +1132,6 @@
       return;
     }
 
-    // 2. PDF preview
     if (isPdf){
       var pdfSrc = a.url;
       try {
@@ -1127,9 +1147,7 @@
       return;
     }
 
-    // 3. Office Document Preview (.doc, .docx, .xls, .xlsx, etc.)
     if (isOffice){
-      // If the file is hosted online (via Supabase), embed Microsoft's Office Viewer
       if (a.url && a.url.indexOf("http") === 0 && a.url.indexOf("data:") !== 0){
         body.innerHTML = "";
         var officeIframe = document.createElement("iframe");
@@ -1137,7 +1155,6 @@
         body.appendChild(officeIframe);
         return;
       } else {
-        // Local Data URL preview fallback: render extracted text content
         try {
           var base64Data = a.url.split(",")[1];
           var binaryStr = atob(base64Data);
@@ -1155,7 +1172,6 @@
       }
     }
 
-    // 4. CSV File Preview: render as styled HTML Table
     if (isCsv){
       try {
         var textContent = "";
@@ -1188,7 +1204,6 @@
       }
     }
 
-    // Fallback if unsupported format
     var msg = document.createElement("div");
     msg.className = "attachment-modal-unsupported";
     msg.textContent = "This file type can't be previewed here — use \"Open in new tab\" above.";
@@ -1342,6 +1357,7 @@
       updateVenueToggleLabel("");
       document.getElementById("handover-title").textContent = "Venue Handover";
       document.getElementById("handover-status-badge").style.display = "none";
+      document.getElementById("btn-send-review-handover").style.display = "none";
       document.getElementById("btn-submit-handover").style.display = "none";
       document.getElementById("btn-reopen-handover").style.display = "none";
       document.getElementById("locked-note").style.display = "none";
@@ -1459,15 +1475,22 @@
     persistCurrent();
   });
 
+  document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
+    await persistCurrent({ status: "in_review" });
+    renderHandover(currentVenueKey);
+  });
+
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
     renderHandover(currentVenueKey);
   });
+
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft", submittedAt: null });
     renderHandover(currentVenueKey);
   });
+
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
     var btn = document.getElementById("btn-delete-handover");
     var label = venueKeyDisplay(currentVenueKey) || currentVenueKey;
@@ -1500,18 +1523,25 @@
     var admin = readAdmin();
     var showingAll = filter === "all";
     var showingDraft = filter === "draft";
+    var showingReview = filter === "in_review";
     var blocked = showingAll && !admin;
 
     document.getElementById("submitted-title").textContent = showingAll
       ? "Manage Venues"
       : showingDraft
       ? "Open Handovers"
+      : showingReview
+      ? "Handovers In Review"
       : "Submitted Handovers";
+
     document.getElementById("submitted-subtitle").textContent = showingAll
       ? "Every venue on record, draft or submitted."
       : showingDraft
-      ? "Handovers that have been started but not submitted yet."
+      ? "Handovers that have been started but not sent for review."
+      : showingReview
+      ? "Handovers awaiting reviewer approval and final submission."
       : "Completed handovers and their follow-up points.";
+
     document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
 
     var listEl = document.getElementById("submitted-list");
@@ -1519,7 +1549,7 @@
     if (blocked) return;
 
     listEl.innerHTML = '<p class="list-empty">Loading…</p>';
-    var statusFilter = showingAll ? null : showingDraft ? "draft" : "submitted";
+    var statusFilter = showingAll ? null : filter;
     var rows = await listRecords(statusFilter, showingAll);
     listEl.innerHTML = "";
 
@@ -1533,15 +1563,17 @@
       var row = document.createElement("div");
       row.className = "list-row";
       row.tabIndex = 0;
+      
+      var badgeLabel = isDeleted ? "Deleted" : (r.status === "submitted" ? "Submitted" : (r.status === "in_review" ? "In Review" : "Draft"));
+      var badgeClass = isDeleted ? "deleted" : (r.status || "draft");
+
       row.innerHTML =
         '<div>' +
           '<div class="list-row-title">' + (escapeHtml(r.ship) || escapeHtml(venueKeyDisplay(r.venueKey)) || r.venueKey) + '</div>' +
           '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
         '</div>' +
         '<div class="list-row-right">' +
-          '<span class="status-badge ' + (isDeleted ? "deleted" : r.status === "submitted" ? "submitted" : "draft") + '">' +
-            (isDeleted ? "Deleted" : r.status === "submitted" ? "Submitted" : "Draft") +
-          '</span>' +
+          '<span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span>' +
           '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
           (admin ? (isDeleted
             ? '<button type="button" class="list-row-restore">Restore</button>'
