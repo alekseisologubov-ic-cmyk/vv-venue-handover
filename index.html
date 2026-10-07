@@ -174,7 +174,7 @@
   .attachment-thumb{
     display:flex; align-items:center; justify-content:center;
     width:100%; aspect-ratio:1/1; border-radius:6px; overflow:hidden;
-    background:#EFE8F2; font-size:28px; text-decoration:none;
+    background:#EFE8F2; font-size:28px; text-decoration:none; color:inherit;
   }
   .attachment-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
   .attachment-meta{ display:flex; flex-direction:column; gap:1px; }
@@ -184,7 +184,7 @@
   }
   .attachment-size{ font-size:10.5px; color:var(--vv-gray-mid); }
   .attachment-remove{
-    position:absolute; top:4px; right:4px;
+    position:absolute; top:4px; right:4px; z-index:2;
     width:20px; height:20px; border-radius:50%; border:none;
     background:rgba(27,27,27,0.75); color:#fff; font-size:14px; line-height:1;
     cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -199,10 +199,6 @@
   }
   .attachments-hint{ font-size:12px; color:var(--vv-gray-mid); }
   .attachments-error{ margin:10px 0 0; font-size:12.5px; color:var(--vv-red-deep); }
-  .attachment-row{ font-size:13.5px; padding:6px 0; border-bottom:1px solid #F0EAF4; }
-  .attachment-row:last-child{ border-bottom:none; }
-  .attachment-row a{ color:var(--vv-squid-ink); font-weight:600; }
-  .attachment-remove-link{ color:var(--vv-red-deep) !important; font-weight:400 !important; font-size:12px; }
 
   /* ---- sections + cards ---- */
   .section-wrap{ margin-bottom:28px; }
@@ -219,8 +215,8 @@
   textarea{ width:100%; min-height:72px; resize:vertical; border:1px solid #E3D8EA; border-radius:6px; padding:8px 10px; font-family:inherit; font-size:14px; color:inherit; background:#FBFAFC; flex:1; }
   textarea:focus{ outline:none; border-color:var(--vv-red); }
 
-  /* per-field attachments (small attach icon + chip list under each textarea) */
-  .field-attach-chips{ display:flex; flex-direction:column; gap:2px; margin-top:6px; }
+  /* per-field attachments */
+  .field-attach-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .field-attach-chips:empty{ margin-top:0; }
   .field-attach-chip{
     font-size:11.5px; color:var(--vv-body-text); display:flex; align-items:center; gap:4px;
@@ -285,7 +281,7 @@
   [data-view]{ display:none; }
   [data-view].active{ display:block; }
 
-  /* attachment preview modal (images/PDFs open here, not a new browser tab) */
+  /* attachment preview modal */
   .attachment-modal{ position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:24px; }
   .attachment-modal-backdrop{ position:absolute; inset:0; background:rgba(20,10,30,0.72); }
   .attachment-modal-box{
@@ -533,17 +529,10 @@
   var STORAGE_KEY = "vv-venue-handovers-v1";
   var ADMIN_KEY = "vv-admin-mode";
 
-  // Admin password — a basic deterrent, not real security: this file is
-  // plain client-side HTML, so anyone who views source can read this value.
-  // It stops casual access; it does not stop someone who opens the source.
-  // For real access control, this needs a proper login (e.g. Supabase Auth).
   var ADMIN_PASSWORD = "handover2026";
 
-  // The fleet — picked first, before the station(s).
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
-  // Venue/station list — pulled from Station_Budget_proposal.xlsx ("By Location").
-  // Same station list applies on every ship.
   var STATIONS = [
     "Culinary Leadership", "Extra Virgin", "The Wake",
     "Test Kitchen", "Razzle Dazzle", "Pink Agave", "Gunbae", "The Dock",
@@ -555,20 +544,6 @@
     "The Kitchen Table", "The Manor"
   ];
 
-  // ---------------------------------------------------------------
-  // Supabase config — fill these in to sync across devices instead of
-  // storing everything only in this one browser. Both values are safe to
-  // put directly in client-side code: the anon key only works because of
-  // the Row Level Security policies below.
-  //   Table:  public.handovers  (id, ship, outgoing, incoming, handover_date,
-  //           fields, attachments, status, submitted_at, updated_at)
-  //   Bucket: handover-files
-  //   Run supabase_setup_handovers.sql once (RLS + realtime + storage
-  //   policies) — your table/columns already exist, that script just
-  //   grants access and turns on sync.
-  //   Then paste your Project URL and anon key below
-  //   (Project Settings → API).
-  // ---------------------------------------------------------------
   var SUPABASE_URL = "https://mnkbdmvqgyarpzvdmvkx.supabase.co";
   var SUPABASE_ANON_KEY = "sb_publishable_Y_nB0YkFiBjCFdGPFNoLXA_snSGq8N8";
 
@@ -579,14 +554,9 @@
   if (SUPABASE_CONFIGURED && window.supabase && window.supabase.createClient) {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   } else {
-    SUPABASE_CONFIGURED = false; // library failed to load, or not configured — fall back to local
+    SUPABASE_CONFIGURED = false;
   }
 
-  // ---------------------------------------------------------------
-  // Storage helpers — Supabase when configured, this browser's
-  // localStorage otherwise. Every call site awaits these, so the rest of
-  // the app doesn't need to know which mode it's in.
-  // ---------------------------------------------------------------
   function localLoadAll(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -594,11 +564,9 @@
     }catch(e){ return {}; }
   }
   function localSaveAll(all){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){ /* storage unavailable */ }
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){}
   }
 
-  // Table: public.handovers — id, ship, outgoing, incoming, handover_date,
-  // fields, attachments, status, submitted_at, updated_at.
   function rowToRecord(row){
     return {
       ship: row.ship || "",
@@ -631,8 +599,6 @@
     };
   }
 
-  // Fetch one venue's record — always returns a usable record (never null),
-  // same as the pasted snippet's fetchHandoverRecord pattern.
   async function fetchHandoverRecord(venueKey){
     if (SUPABASE_CONFIGURED){
       var res = await sb.from("handovers").select("*").eq("id", venueKey).maybeSingle();
@@ -643,10 +609,6 @@
     return all[venueKey] || emptyRecord();
   }
 
-  // Save one venue's record (full upsert).
-  // Returns true on success, false on failure (and logs the error either way
-  // a caller cares to check it) — so a failed write can actually be shown to
-  // the person instead of only appearing in the browser console.
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
       var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
@@ -659,11 +621,6 @@
     return true;
   }
 
-  // Soft delete — admin-only. Marks the record as deleted (deletedAt set)
-  // without actually removing it or its files, so it can be restored later.
-  // It just disappears from every normal list (Draft/Submitted); only the
-  // admin "Manage Venues" view (includeDeleted=true) still shows it, with a
-  // Restore option instead of Delete.
   async function softDeleteRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
     rec.deletedAt = new Date().toISOString();
@@ -677,9 +634,6 @@
     return true;
   }
 
-  // List records, optionally filtered by status ("draft" | "submitted" | null
-  // for any status). Deleted records are hidden unless includeDeleted is true
-  // (only the admin "Manage Venues" view passes true).
   async function listRecords(statusFilter, includeDeleted){
     if (SUPABASE_CONFIGURED){
       var query = sb.from("handovers").select("*").order("updated_at", { ascending: false });
@@ -709,13 +663,11 @@
   function emptyRecord(){
     return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
   }
-  // The date field is a native <input type="date">, whose value is always
-  // "YYYY-MM-DD" — this turns that into a friendlier display string wherever
-  // the date is shown as plain text (e.g. the footer).
+
   function formatDateDisplay(isoDate){
     if (!isoDate) return "";
     var d = new Date(isoDate + "T00:00:00");
-    if (isNaN(d.getTime())) return isoDate; // fall back to raw value if unparsable
+    if (isNaN(d.getTime())) return isoDate;
     return d.toLocaleDateString();
   }
 
@@ -738,12 +690,6 @@
     toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 1000);
   }
 
-  // ---------------------------------------------------------------
-  // Router — plain hash-based, no build step needed
-  //   #home
-  //   #handover?v=<code>
-  //   #submitted?filter=submitted|all
-  // ---------------------------------------------------------------
   function parseHash(){
     var h = window.location.hash.replace(/^#/, "");
     var qIndex = h.indexOf("?");
@@ -762,7 +708,7 @@
 
   function route(){
     var r = parseHash();
-    if (r.path !== "handover") unsubscribeCurrentChannel(); // leaving the form — stop listening for its updates
+    if (r.path !== "handover") unsubscribeCurrentChannel();
     if (r.path === "handover"){
       showView("handover");
       renderHandover(r.params.get("v") || "");
@@ -788,21 +734,18 @@
     btn.textContent = "Admin mode " + (admin ? "on" : "off");
     btn.className = "admin-pill " + (admin ? "on" : "off");
 
-    // Manage Venues is an admin-only tile — it simply doesn't exist on the
-    // home screen until admin mode is on, rather than showing disabled.
     document.getElementById("btn-manage").style.display = admin ? "flex" : "none";
     document.getElementById("manage-desc").textContent = "Browse every venue, draft or submitted, and reopen as needed.";
   }
 
   document.getElementById("btn-admin-toggle").addEventListener("click", function(){
     if (readAdmin()){
-      // Turning off needs no password — only turning on is gated.
       writeAdmin(false);
       renderHome();
       return;
     }
     var entered = window.prompt("Enter the admin password:");
-    if (entered === null) return; // cancelled
+    if (entered === null) return;
     if (entered !== ADMIN_PASSWORD){
       window.alert("Incorrect password.");
       return;
@@ -811,8 +754,6 @@
     renderHome();
   });
 
-  // Both buttons land on the same form — the dropdown there is the one
-  // place venues are picked from now (no more free-typed codes).
   document.getElementById("btn-create").addEventListener("click", function(){
     window.location.hash = "handover";
   });
@@ -834,10 +775,10 @@
   // ---------------------------------------------------------------
   var currentVenueKey = "default-venue";
   var currentAttachments = [];
-  var currentFieldAttachments = {}; // { fieldId: [attachment, ...] }
+  var currentFieldAttachments = {};
   var saveTimer = null;
   var currentChannel = null;
-  var skipNextRealtime = false; // our own writes also fire a realtime event — ignore it once
+  var skipNextRealtime = false;
 
   function unsubscribeCurrentChannel(){
     if (currentChannel && sb){
@@ -873,7 +814,6 @@
     return { html: html, counter: counter };
   }
 
-  // Build the section markup once
   (function initSections(){
     var top = buildSectionHTML(SECTIONS.slice(0,3), 0);
     document.getElementById("sections-top").innerHTML = top.html;
@@ -881,11 +821,6 @@
     document.getElementById("sections-bottom").innerHTML = bottom.html;
   })();
 
-  // ---------------------------------------------------------------
-  // Venue picker — ship first (one), then station(s) on it (one or more).
-  // Key format: "<ship-slug>__<station-slug>[+<station-slug>...]"
-  // e.g. "scarlet-lady__razzle-dazzle+the-wake"
-  // ---------------------------------------------------------------
   function slugToLabel(slug, list){
     var found = list.filter(function(n){ return slugify(n) === slug; })[0];
     return found || slug;
@@ -934,7 +869,6 @@
     var panel = document.getElementById("venue-multi-panel");
 
     function openPanel(){
-      // Re-sync selections to the currently open venue every time it's opened.
       var p = parseVenueKey(currentVenueKey);
       shipList.querySelectorAll('input[type="radio"]').forEach(function(rb){
         rb.checked = rb.value === p.ship;
@@ -967,11 +901,6 @@
       }
       closePanel();
       var baseKey = buildVenueKey(shipChecked.value, stationsChecked);
-      // Starting fresh from the home screen (no venue open yet) always makes
-      // a brand-new report, even for a ship/station combo used before — so
-      // there can be as many open reports for the same ship as needed.
-      // Switching ship/station while already viewing a handover still
-      // navigates to that exact existing one, unchanged.
       var key = currentVenueKey
         ? baseKey
         : baseKey + "__" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -989,8 +918,6 @@
   function applyRecordToForm(venueKey, rec){
     updateVenueToggleLabel(venueKey);
 
-    // Pre-fill the display name from ship + selected station(s) if the chef
-    // hasn't typed their own name for it yet — still fully editable.
     var joinedLabel = venueKeyDisplay(venueKey);
     var shipValue = rec.ship || joinedLabel;
 
@@ -1052,16 +979,30 @@
     });
   }
 
-  var ATTACHMENTS_BUCKET = "handover-files"; // matches your existing Storage bucket
+  var ATTACHMENTS_BUCKET = "handover-files";
 
-  // Small 📎 chip list under one specific field's textarea.
   function renderFieldAttachmentChips(fieldId, locked){
     var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
     if (!el) return;
     var list = currentFieldAttachments[fieldId] || [];
+    
+    el.style.display = "flex";
+    el.style.flexWrap = "wrap";
+    el.style.gap = "6px";
+    
     el.innerHTML = list.map(function(a, idx){
+      var isImg = (a.type && a.type.indexOf("image/") === 0) || 
+                  (a.url && (a.url.indexOf("data:image/") === 0 || a.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
       var removeLink = locked ? "" :
-        ' <button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '">×</button>';
+        ' <button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '" style="margin-left:4px; font-weight:bold;">×</button>';
+      
+      if (isImg) {
+        return '<div style="position:relative; width:50px; height:50px; border-radius:6px; overflow:hidden; border:1px solid #E3D8EA; background:#f0f0f0;">' +
+          '<a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '"><img src="' + a.url + '" style="width:100%; height:100%; object-fit:cover;"></a>' +
+          (locked ? '' : '<button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '" style="position:absolute; top:2px; right:2px; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:16px; height:16px; font-size:10px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;">×</button>') +
+        '</div>';
+      }
+
       return '<div class="field-attach-chip">📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
     }).join("");
 
@@ -1106,8 +1047,6 @@
     }
   }
 
-  // Delegated listeners — the field cards are rebuilt on every load, so these
-  // are attached once to a stable ancestor instead of per-card.
   document.getElementById("handover-fieldset").addEventListener("change", function(e){
     var input = e.target.closest(".field-attach-input");
     if (!input) return;
@@ -1123,11 +1062,9 @@
   });
 
   // ---------------------------------------------------------------
-  // Attachment preview modal — images and PDFs open here instead of a new
-  // browser tab; anything else (Word/Excel/CSV) can't be previewed inline by
-  // the browser, so that case just offers the "Open in new tab" link.
+  // Attachment preview modal
   // ---------------------------------------------------------------
-  var currentObjectUrl = null; // tracked so it can be revoked (avoids a memory leak)
+  var currentObjectUrl = null;
 
   function revokeCurrentObjectUrl(){
     if (currentObjectUrl){
@@ -1153,10 +1090,6 @@
 
     var src = a.url;
     if (previewable){
-      // Load as a blob and hand the browser a local object URL instead of the
-      // original one — this makes the browser treat it purely as the file's
-      // own MIME type and render it inline, regardless of any "download this"
-      // response header the original URL's server might send.
       try{
         var res = await fetch(a.url);
         var blob = await res.blob();
@@ -1164,7 +1097,6 @@
         currentObjectUrl = src;
       }catch(e){
         console.error("Couldn't fetch attachment for inline preview:", e);
-        // fall back to the direct URL — still usually renders fine
       }
     }
 
@@ -1187,7 +1119,7 @@
   }
   function closeAttachmentModal(){
     document.getElementById("attachment-modal").style.display = "none";
-    document.getElementById("attachment-modal-body").innerHTML = ""; // stop any PDF/video from playing in the background
+    document.getElementById("attachment-modal-body").innerHTML = "";
     revokeCurrentObjectUrl();
   }
   document.getElementById("attachment-modal-close").addEventListener("click", closeAttachmentModal);
@@ -1212,9 +1144,6 @@
     });
   }
 
-  // Upload a FileList — to Supabase Storage when configured, or inline as
-  // base64 when running local-only. Returns the array of attachment records
-  // to append (skips and reports anything over the size cap).
   async function uploadFiles(venueKey, fileList){
     var files = Array.from(fileList || []);
     var maxBytes = SUPABASE_CONFIGURED ? 15*1024*1024 : 2*1024*1024;
@@ -1257,7 +1186,6 @@
     return uploaded;
   }
 
-  // Simple 📎 list — matches the plain-list style rather than thumbnail tiles.
   function renderFileListUI(files, locked){
     var listEl = document.getElementById("attachments-grid");
     if (!listEl) return;
@@ -1270,11 +1198,31 @@
       listEl.innerHTML = '<em style="color:var(--vv-gray-mid); font-size:13px;">No files attached yet.</em>';
       return;
     }
+
+    listEl.style.display = "grid";
+    listEl.style.gridTemplateColumns = "repeat(auto-fill, minmax(130px, 1fr))";
+    listEl.style.gap = "12px";
+
     listEl.innerHTML = files.map(function(f, idx){
+      var isImg = (f.type && f.type.indexOf("image/") === 0) || 
+                  (f.url && (f.url.indexOf("data:image/") === 0 || f.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
       var sizeTxt = formatBytes(f.size);
-      var removeLink = locked ? "" : ' · <a href="#" data-remove-idx="' + idx + '" class="attachment-remove-link">remove</a>';
-      return '<div class="attachment-row">📎 <a href="#" data-open-main="' + idx + '">' + escapeHtml(f.name) + '</a>' +
-        (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '</div>';
+      
+      var previewHtml = isImg
+        ? '<img src="' + f.url + '" alt="' + escapeHtml(f.name) + '" style="width:100%; height:100%; object-fit:cover;">'
+        : '<span style="font-size:28px;">📄</span>';
+
+      var removeBtn = locked ? "" :
+        '<button type="button" class="attachment-remove" data-remove-idx="' + idx + '" title="Remove">×</button>';
+
+      return '<div class="attachment-tile">' +
+        removeBtn +
+        '<a href="#" class="attachment-thumb" data-open-main="' + idx + '">' + previewHtml + '</a>' +
+        '<div class="attachment-meta">' +
+          '<div class="attachment-name" title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</div>' +
+          (sizeTxt ? '<div class="attachment-size">' + sizeTxt + '</div>' : '') +
+        '</div>' +
+      '</div>';
     }).join("");
 
     listEl.querySelectorAll("[data-open-main]").forEach(function(a){
@@ -1285,17 +1233,18 @@
     });
 
     if (!locked){
-      listEl.querySelectorAll("[data-remove-idx]").forEach(function(a){
-        a.addEventListener("click", async function(e){
+      listEl.querySelectorAll("[data-remove-idx]").forEach(function(btn){
+        btn.addEventListener("click", async function(e){
           e.preventDefault();
-          var idx = parseInt(a.getAttribute("data-remove-idx"), 10);
+          e.stopPropagation();
+          var idx = parseInt(btn.getAttribute("data-remove-idx"), 10);
           var removed = currentAttachments[idx];
           currentAttachments = currentAttachments.slice(0, idx).concat(currentAttachments.slice(idx + 1));
           renderFileListUI(currentAttachments, locked);
           await persistCurrent({ attachments: currentAttachments });
           if (SUPABASE_CONFIGURED && removed && removed.path){
             var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove([removed.path]);
-            if (del.error) console.error(del.error); // best-effort; harmless if it fails
+            if (del.error) console.error(del.error);
           }
         });
       });
@@ -1304,7 +1253,6 @@
 
   var syncDot = null, syncLabel = null;
   function setSyncStatus(mode){
-    // mode: "off" | "live" | "saving" | "error"
     if (!syncDot) syncDot = document.querySelector(".sync-bar .dot");
     if (!syncLabel) syncLabel = document.getElementById("sync-label");
     if (!syncDot) return;
@@ -1326,7 +1274,6 @@
     var noVenueNote = document.getElementById("no-venue-note");
 
     if (!venueKey){
-      // Nothing picked yet — show the dropdown and a prompt, nothing else.
       updateVenueToggleLabel("");
       document.getElementById("handover-title").textContent = "Venue Handover";
       document.getElementById("handover-status-badge").style.display = "none";
@@ -1356,8 +1303,8 @@
 
     var rec = await fetchHandoverRecord(venueKey);
     var all0 = SUPABASE_CONFIGURED ? null : localLoadAll();
-    if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec); // seed a blank row locally so it shows up in lists
-    if (venueKey !== currentVenueKey) return; // navigated away while loading
+    if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec);
+    if (venueKey !== currentVenueKey) return;
 
     applyRecordToForm(venueKey, rec);
     setSyncStatus("live");
@@ -1372,7 +1319,6 @@
       document.getElementById("f-ship").focus();
     }
 
-    // Live sync: if someone else edits this same venue elsewhere, reflect it here.
     if (SUPABASE_CONFIGURED){
       currentChannel = sb
         .channel("handovers:" + venueKey)
@@ -1408,13 +1354,8 @@
     var existing = await fetchHandoverRecord(venueKey);
     var vals = currentFormValues();
 
-    // Pick up any attachments passed in explicitly (e.g. after a remove);
-    // otherwise fall back to whatever's already on the record.
     var attachments = (overrides && overrides.attachments) || existing.attachments || [];
 
-    // If the file input has a pending selection, upload it now and fold the
-    // results into this same save — one combined operation, same as typing
-    // a field and having it autosave.
     var fileInput = document.getElementById("file-input");
     if (fileInput && fileInput.files && fileInput.files.length > 0){
       var newFiles = await uploadFiles(venueKey, fileInput.files);
@@ -1423,7 +1364,7 @@
     }
 
     var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
-    if (SUPABASE_CONFIGURED) skipNextRealtime = true; // our own write — don't re-apply it via the subscription
+    if (SUPABASE_CONFIGURED) skipNextRealtime = true;
     var ok = await saveRecord(venueKey, next);
 
     if (!ok){
@@ -1449,15 +1390,11 @@
 
   document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
 
-  // File input: save immediately on selection (uploads + record save as one step).
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
-    // Must be an ISO string, not a raw number — the Supabase column is
-    // timestamptz, and a bare epoch number gets rejected by PostgREST,
-    // which silently fails the *entire* save (status included).
     var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
     renderHandover(currentVenueKey);
@@ -1498,8 +1435,6 @@
     var admin = readAdmin();
     var showingAll = filter === "all";
     var showingDraft = filter === "draft";
-    // "All" is the admin overview (every venue, any status); Draft is just
-    // the normal "continue what I started" flow, open to anyone.
     var blocked = showingAll && !admin;
 
     document.getElementById("submitted-title").textContent = showingAll
@@ -1520,8 +1455,6 @@
 
     listEl.innerHTML = '<p class="list-empty">Loading…</p>';
     var statusFilter = showingAll ? null : showingDraft ? "draft" : "submitted";
-    // Only the admin "Manage Venues" (all) view surfaces deleted records —
-    // everywhere else, a deleted handover should simply not exist.
     var rows = await listRecords(statusFilter, showingAll);
     listEl.innerHTML = "";
 
@@ -1590,9 +1523,6 @@
     window.location.hash = "home";
   });
 
-  // ---------------------------------------------------------------
-  // boot
-  // ---------------------------------------------------------------
   if (!window.location.hash) window.location.hash = "home";
   route();
 })();
