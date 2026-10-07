@@ -64,10 +64,13 @@
   }
   .subtitle{ margin:8px 0 0; font-size:15px; color:#E7D9EE; }
   .back-link{
-    display:inline-block; color:#E7D9EE; font-size:12.5px;
-    text-decoration:none; margin-bottom:10px; opacity:0.85; cursor:pointer; background:none; border:none; padding:0; font-family:inherit;
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--vv-red); color:#fff; font-weight:700; font-size:13px;
+    text-decoration:none; margin-bottom:14px; cursor:pointer;
+    border:none; border-radius:20px; padding:8px 18px; font-family:inherit;
+    box-shadow:0 2px 8px rgba(0,0,0,0.15);
   }
-  .back-link:hover{ opacity:1; text-decoration:underline; }
+  .back-link:hover{ background:var(--vv-red-light); }
   .pill{
     display:inline-block; background:var(--vv-red); color:#fff; font-weight:700;
     font-size:11px; letter-spacing:0.08em; text-transform:uppercase;
@@ -384,7 +387,7 @@
   <div class="home-main" style="padding-bottom:0;" id="handover-config-banner-wrap"></div>
   <header class="band stripe-dark">
     <div class="band-inner">
-      <button class="back-link" id="handover-back">← Venue Handover home</button>
+      <button class="back-link" id="handover-back">← Back</button>
       <div class="eyebrow"><span class="dash">—</span> VIRGIN VOYAGES</div>
       <h1 class="title" id="handover-title">Venue Handover</h1>
       <p class="subtitle">Galley &amp; venue operations · shift change record.</p>
@@ -490,7 +493,7 @@
 <div data-view="submitted">
   <header class="band stripe-dark">
     <div class="band-inner">
-      <button class="back-link" id="submitted-back">← Venue Handover home</button>
+      <button class="back-link" id="submitted-back">← Back</button>
       <div class="eyebrow"><span class="dash">—</span> VIRGIN VOYAGES</div>
       <h1 class="title" id="submitted-title">Submitted Handovers</h1>
       <p class="subtitle" id="submitted-subtitle">Completed handovers and their follow-up points.</p>
@@ -1011,7 +1014,11 @@
     });
 
     var admin = readAdmin();
-    var locked = rec.status === "submitted" && !admin;
+    // The reviewer password only means something if it actually gates
+    // editing/acting on the handover itself, not just the list page you
+    // found it from.
+    var reviewerOk = admin || readReviewerAuth();
+    var locked = (rec.status === "submitted" && !admin) || (rec.status === "in_review" && !reviewerOk);
     document.getElementById("handover-fieldset").disabled = locked;
     document.getElementById("handover-admin-flag").style.display = admin ? "inline" : "none";
 
@@ -1022,7 +1029,9 @@
 
     var reviewerCard = document.getElementById("reviewer-card");
     reviewerCard.style.display = (rec.status === "in_review" || rec.status === "submitted" || rec.reviewerComments) ? "block" : "none";
-    document.getElementById("f-reviewer-comments").disabled = locked;
+    // Only the reviewer (or admin) can actually type in it, and only while
+    // it's genuinely in review — everyone else just sees what's there.
+    document.getElementById("f-reviewer-comments").disabled = !(rec.status === "in_review" && reviewerOk);
 
     var pdfBtn = document.getElementById("btn-pdf-export");
     var sendReviewBtn = document.getElementById("btn-send-review-handover");
@@ -1041,10 +1050,16 @@
       lockedNote.style.display = "none";
     } else if (rec.status === "in_review") {
       sendReviewBtn.style.display = "none";
-      sendBackBtn.style.display = "inline-block";
-      submitBtn.style.display = "inline-block";
+      // reviewerOk was already computed above, alongside `locked`.
+      sendBackBtn.style.display = reviewerOk ? "inline-block" : "none";
+      submitBtn.style.display = reviewerOk ? "inline-block" : "none";
       reopenBtn.style.display = admin ? "inline-block" : "none";
-      lockedNote.style.display = "none";
+      if (reviewerOk){
+        lockedNote.style.display = "none";
+      } else {
+        lockedNote.style.display = "inline";
+        lockedNote.textContent = "Awaiting reviewer sign-off — enter the reviewer password from the home screen to act on this.";
+      }
     } else if (rec.status === "submitted") {
       sendReviewBtn.style.display = "none";
       sendBackBtn.style.display = "none";
@@ -1078,23 +1093,10 @@
 
   var ATTACHMENTS_BUCKET = "handover-files";
 
-  async function ensureAttachmentUrl(a){
-    if (!a) return a;
-    if (SUPABASE_CONFIGURED && a.path && !a.url){
-      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 60 * 60);
-      if (!signed.error && signed.data && signed.data.signedUrl){
-        a.url = signed.data.signedUrl;
-      }
-    }
-    return a;
-  }
-
-  async function renderFieldAttachmentChips(fieldId, locked){
+  function renderFieldAttachmentChips(fieldId, locked){
     var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
     if (!el) return;
     var list = currentFieldAttachments[fieldId] || [];
-    await Promise.all(list.map(ensureAttachmentUrl));
-    
     el.innerHTML = list.map(function(a, idx){
       var isImg = (a.type && a.type.indexOf("image/") === 0) || 
                   (a.url && (a.url.indexOf("data:image/") === 0 || a.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
@@ -1127,7 +1129,7 @@
     var next = Object.assign({}, currentFieldAttachments);
     next[fieldId] = (next[fieldId] || []).concat(uploaded);
     currentFieldAttachments = next;
-    await renderFieldAttachmentChips(fieldId, false);
+    renderFieldAttachmentChips(fieldId, false);
 
     await persistCurrent({ fieldAttachments: next });
     if (triggerEl) triggerEl.classList.remove("busy");
@@ -1140,7 +1142,7 @@
     var next = Object.assign({}, currentFieldAttachments);
     next[fieldId] = list;
     currentFieldAttachments = next;
-    await renderFieldAttachmentChips(fieldId, false);
+    renderFieldAttachmentChips(fieldId, false);
 
     await persistCurrent({ fieldAttachments: next });
     if (SUPABASE_CONFIGURED && removed && removed.path){
@@ -1176,8 +1178,6 @@
   }
 
   async function openAttachmentModal(a){
-    if (!a) return;
-    await ensureAttachmentUrl(a);
     var modal = document.getElementById("attachment-modal");
     var body = document.getElementById("attachment-modal-body");
     var nameEl = document.getElementById("attachment-modal-name");
@@ -1198,9 +1198,16 @@
     var isCsv = fileName.endsWith(".csv") || type === "text/csv";
 
     if (isImg){
+      var src = a.url;
+      try {
+        var res = await fetch(a.url);
+        var blob = await res.blob();
+        src = URL.createObjectURL(blob);
+        currentObjectUrl = src;
+      } catch(e) {}
       body.innerHTML = "";
       var img = document.createElement("img");
-      img.src = a.url;
+      img.src = src;
       img.alt = a.name || "";
       body.appendChild(img);
       return;
@@ -1354,7 +1361,7 @@
     return uploaded;
   }
 
-  async function renderFileListUI(files, locked){
+  function renderFileListUI(files, locked){
     var listEl = document.getElementById("attachments-grid");
     if (!listEl) return;
     document.getElementById("attachments-upload-row").style.display = locked ? "none" : "flex";
@@ -1366,9 +1373,6 @@
       listEl.innerHTML = '<em style="color:var(--vv-gray-mid); font-size:13px;">No files attached yet.</em>';
       return;
     }
-
-    await Promise.all(files.map(ensureAttachmentUrl));
-
     listEl.innerHTML = files.map(function(f, idx){
       var isImg = (f.type && f.type.indexOf("image/") === 0) || 
                   (f.url && (f.url.indexOf("data:image/") === 0 || f.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
@@ -1561,29 +1565,32 @@
     window.print();
   });
 
+  // Only the report moves between folders — the person acting on it stays in
+  // their own queue (the one they were just working from), rather than being
+  // dragged along to wherever the report ends up next.
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "in_review" });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'In Review'");
+    showToast("Sent for review");
+    window.location.hash = "submitted?filter=draft"; // back to Open Handovers
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft" });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'Open Handovers'");
+    showToast("Sent back to open");
+    window.location.hash = "submitted?filter=in_review"; // stay in the reviewer's queue
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'Submitted Handovers'");
+    showToast("Approved and submitted");
+    window.location.hash = "submitted?filter=in_review"; // stay in the reviewer's queue
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft", submittedAt: null });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'Open Handovers'");
+    showToast("Reopened as draft");
+    window.location.hash = "submitted?filter=all"; // back to the admin's Manage Venues view
   });
 
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
