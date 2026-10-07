@@ -286,7 +286,7 @@
 
   .status-toast{
     position:fixed; bottom:16px; right:16px; background:var(--vv-near-black); color:#fff;
-    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none; z-index:999;
+    font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none;
   }
   .status-toast.show{opacity:0.92;}
 
@@ -593,7 +593,10 @@
     }catch(e){ return {}; }
   }
   function localSaveAll(all){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){}
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); return true; }catch(e){
+      console.error("Local storage save error:", e);
+      return false;
+    }
   }
 
   function rowToRecord(row){
@@ -612,7 +615,6 @@
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     };
   }
-
   function recordToRow(venueKey, rec){
     var fieldsWithReviewer = Object.assign({}, rec.fields || emptyFields(), { _reviewerComments: rec.reviewerComments || "" });
     return {
@@ -644,39 +646,27 @@
 
   async function saveRecord(venueKey, rec){
     if (SUPABASE_CONFIGURED){
-      var fullRow = recordToRow(venueKey, rec);
-      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
-      
-      // Fallback if schema does not support reviewer_comments column directly
+      var res = await sb.from("handovers").upsert(recordToRow(venueKey, rec), { onConflict: "id" });
       if (res.error){ 
-        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error.message);
-        var fallbackRow = Object.assign({}, fullRow);
-        delete fallbackRow.reviewer_comments;
-        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
-        if (resFallback.error) {
-          console.error("Supabase Save Error:", resFallback.error);
-          return false;
-        }
+        console.error("Supabase Save Error:", res.error); 
+        return false; 
       }
       return true;
     }
     var all = localLoadAll();
     all[venueKey] = rec;
-    localSaveAll(all);
-    return true;
+    return localSaveAll(all);
   }
 
   async function softDeleteRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
     rec.deletedAt = new Date().toISOString();
-    await saveRecord(venueKey, rec);
-    return true;
+    return await saveRecord(venueKey, rec);
   }
   async function restoreRecord(venueKey){
     var rec = await fetchHandoverRecord(venueKey);
     rec.deletedAt = null;
-    await saveRecord(venueKey, rec);
-    return true;
+    return await saveRecord(venueKey, rec);
   }
 
   async function listRecords(statusFilter, includeDeleted){
@@ -738,7 +728,7 @@
     t.textContent = text;
     t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 3000);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 1000);
   }
 
   function parseHash(){
@@ -839,8 +829,11 @@
   var currentAttachments = [];
   var currentFieldAttachments = {};
   var saveTimer = null;
+  var saveQueue = Promise.resolve();
   var currentChannel = null;
-  var skipNextRealtime = false;
+  var dirtyKeys = {};
+  var lastLoadedRecord = null;
+  var realtimeConflict = false;
 
   function unsubscribeCurrentChannel(){
     if (currentChannel && sb){
@@ -978,6 +971,10 @@
   }
 
   function applyRecordToForm(venueKey, rec){
+    if (venueKey !== currentVenueKey) return;
+    dirtyKeys = {};
+    realtimeConflict = false;
+    lastLoadedRecord = JSON.parse(JSON.stringify(rec));
     updateVenueToggleLabel(venueKey);
 
     var joinedLabel = venueKeyDisplay(venueKey);
@@ -1057,9 +1054,35 @@
     document.querySelectorAll(".field-attach-row").forEach(function(el){
       el.style.display = locked ? "none" : "flex";
     });
+    refreshAttachmentUrls();
   }
 
   var ATTACHMENTS_BUCKET = "handover-files";
+
+  async function ensureAttachmentUrl(a){
+    if (!a) return a;
+    if (SUPABASE_CONFIGURED && a.path){
+      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 60 * 60);
+      if (!signed.error && signed.data && signed.data.signedUrl){
+        a.url = signed.data.signedUrl;
+      }
+    }
+    return a;
+  }
+
+  async function refreshAttachmentUrls(){
+    if (!SUPABASE_CONFIGURED) return;
+    var main = currentAttachments || [];
+    var fields = currentFieldAttachments || {};
+    await Promise.all(main.map(ensureAttachmentUrl));
+    await Promise.all(Object.keys(fields).reduce(function(tasks, key){
+      return tasks.concat((fields[key] || []).map(ensureAttachmentUrl));
+    }, []));
+    renderFileListUI(currentAttachments, document.getElementById("handover-fieldset").disabled);
+    document.querySelectorAll(".field-attach-chips").forEach(function(el){
+      renderFieldAttachmentChips(el.getAttribute("data-attach-list"), document.getElementById("handover-fieldset").disabled);
+    });
+  }
 
   function renderFieldAttachmentChips(fieldId, locked){
     var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
@@ -1146,13 +1169,15 @@
   }
 
   async function openAttachmentModal(a){
+    if (!a) return;
+    await ensureAttachmentUrl(a);
     var modal = document.getElementById("attachment-modal");
     var body = document.getElementById("attachment-modal-body");
     var nameEl = document.getElementById("attachment-modal-name");
     var newTabLink = document.getElementById("attachment-modal-newtab");
 
     nameEl.textContent = a.name || "Attachment";
-    newTabLink.href = a.url;
+    newTabLink.href = a.url || "#";
     revokeCurrentObjectUrl();
     body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Loading preview…</span>';
     modal.style.display = "flex";
@@ -1313,8 +1338,9 @@
           errEl.style.display = "block";
           continue;
         }
-        var pub = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
-        uploaded.push({ path: path, url: (pub.data && pub.data.publicUrl) || "", name: file.name, type: file.type || "", size: file.size });
+        // Store only the storage path. URLs are generated as short-lived signed URLs
+        // when the file is viewed; never persist a public attachment URL.
+        uploaded.push({ path: path, url: "", name: file.name, type: file.type || "", size: file.size });
       } else {
         try{
           var dataUrl = await fileToDataUrl(file);
@@ -1425,7 +1451,7 @@
     var bannerWrap = document.getElementById("handover-config-banner-wrap");
     if (bannerWrap){
       bannerWrap.innerHTML = SUPABASE_CONFIGURED
-        ? ""
+        ? '<div class="config-banner"><strong>Production security check:</strong> this browser uses the Supabase publishable key. Keep Row Level Security enabled and use Supabase Auth for real roles; browser-only admin/reviewer flags are not security.</div>'
         : '<div class="config-banner"><strong>Supabase isn\u2019t connected.</strong> ' +
           "This handover is saving to this device only \u2014 fill in <code>SUPABASE_URL</code> / " +
           "<code>SUPABASE_ANON_KEY</code> near the top of the script to sync across devices.</div>";
@@ -1458,9 +1484,16 @@
           "postgres_changes",
           { event: "*", schema: "public", table: "handovers", filter: "id=eq." + venueKey },
           function(payload){
-            if (skipNextRealtime){ skipNextRealtime = false; return; }
             if (!payload.new) return;
-            applyRecordToForm(venueKey, rowToRecord(payload.new));
+            var remote = rowToRecord(payload.new);
+            if (Object.keys(dirtyKeys).length){
+              realtimeConflict = true;
+              setSyncStatus("error");
+              showToast("Another user updated this handover. Your unsaved changes are being kept.");
+              lastLoadedRecord = remote;
+              return;
+            }
+            applyRecordToForm(venueKey, remote);
           }
         )
         .subscribe();
@@ -1482,75 +1515,119 @@
     };
   }
 
-  async function persistCurrent(overrides){
-    var venueKey = currentVenueKey;
-    var existing = await fetchHandoverRecord(venueKey);
-    var vals = currentFormValues();
+  function markDirtyFromInput(target){
+    if (!target) return;
+    var fieldId = target.getAttribute && target.getAttribute("data-field-id");
+    if (fieldId) dirtyKeys["field:" + fieldId] = true;
+    if (target.id === "f-ship") dirtyKeys.ship = true;
+    if (target.id === "f-outgoing") dirtyKeys.outgoing = true;
+    if (target.id === "f-incoming") dirtyKeys.incoming = true;
+    if (target.id === "f-date") dirtyKeys.date = true;
+    if (target.id === "f-reviewer-comments") dirtyKeys.reviewerComments = true;
+  }
 
-    var attachments = (overrides && overrides.attachments) || existing.attachments || [];
+  function hasDirtyFields(){ return Object.keys(dirtyKeys).length > 0; }
 
-    var fileInput = document.getElementById("file-input");
-    if (fileInput && fileInput.files && fileInput.files.length > 0){
-      var newFiles = await uploadFiles(venueKey, fileInput.files);
-      attachments = attachments.concat(newFiles);
-      fileInput.value = "";
-    }
-
-    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
-    if (SUPABASE_CONFIGURED) skipNextRealtime = true;
-    var ok = await saveRecord(venueKey, next);
-
-    if (!ok){
-      setSyncStatus("error");
-      showToast("Couldn't save — check your connection and try again");
-      return next;
-    }
-
-    currentAttachments = attachments;
-    document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
-    document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
-    renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
-    setSyncStatus("live");
+  function mergeFormChanges(existing, vals){
+    var next = Object.assign({}, existing, { fields: Object.assign({}, existing.fields || {}) });
+    if (dirtyKeys.ship) next.ship = vals.ship;
+    if (dirtyKeys.outgoing) next.outgoing = vals.outgoing;
+    if (dirtyKeys.incoming) next.incoming = vals.incoming;
+    if (dirtyKeys.date) next.date = vals.date;
+    if (dirtyKeys.reviewerComments) next.reviewerComments = vals.reviewerComments;
+    Object.keys(dirtyKeys).forEach(function(key){
+      if (key.indexOf("field:") === 0){
+        next.fields[key.slice(6)] = vals.fields[key.slice(6)] || "";
+      }
+    });
     return next;
   }
 
-  function scheduleSave(){
-    setSyncStatus("saving");
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){ persistCurrent(); showToast("Saved"); }, 500);
+  async function persistCurrent(overrides){
+    var requestedOverrides = overrides || {};
+    var venueKey = currentVenueKey;
+    if (!venueKey) return { ok:false, record:null };
+
+    // Serialize saves so fast typing/uploads cannot race each other.
+    var job = async function(){
+      var existing = await fetchHandoverRecord(venueKey);
+      var vals = currentFormValues();
+      var attachments = Object.prototype.hasOwnProperty.call(requestedOverrides, "attachments")
+        ? requestedOverrides.attachments
+        : (existing.attachments || []);
+
+      var fileInput = document.getElementById("file-input");
+      if (fileInput && fileInput.files && fileInput.files.length > 0){
+        var newFiles = await uploadFiles(venueKey, fileInput.files);
+        attachments = attachments.concat(newFiles);
+        fileInput.value = "";
+      }
+
+      // Only write fields actually changed in this browser. This prevents a stale tab
+      // from overwriting edits made by another user to unrelated fields.
+      var next = mergeFormChanges(existing, vals);
+      next = Object.assign(next, requestedOverrides, { attachments: attachments, updatedAt: Date.now() });
+
+      var ok = await saveRecord(venueKey, next);
+
+      if (!ok){
+        setSyncStatus("error");
+        showToast("Couldn't save — check your connection and try again");
+        return { ok:false, record:next };
+      }
+
+      currentAttachments = attachments;
+      lastLoadedRecord = JSON.parse(JSON.stringify(next));
+      dirtyKeys = {};
+      realtimeConflict = false;
+      document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
+      document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
+      renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
+      setSyncStatus("live");
+      showToast("Saved");
+      return { ok:true, record:next };
+    };
+
+    saveQueue = saveQueue.then(job, job);
+    return await saveQueue;
   }
 
-  document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
-  document.getElementById("f-reviewer-comments").addEventListener("input", scheduleSave);
+  function scheduleSave(target){
+    markDirtyFromInput(target);
+    setSyncStatus("saving");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ persistCurrent(); }, 500);
+  }
+
+  document.getElementById("handover-fieldset").addEventListener("input", function(e){ scheduleSave(e.target); });
+  document.getElementById("f-reviewer-comments").addEventListener("input", function(e){ scheduleSave(e.target); });
 
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
-    showToast("Saved");
   });
 
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
-    await persistCurrent({ status: "in_review" });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'In Review'");
+    var result = await persistCurrent({ status: "in_review" });
+    if (!result.ok) return;
+    window.location.hash = "submitted?filter=in_review";
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
-    await persistCurrent({ status: "draft" });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'Open Handovers'");
+    var result = await persistCurrent({ status: "draft" });
+    if (!result.ok) return;
+    window.location.hash = "submitted?filter=draft";
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
-    await persistCurrent({ status: "submitted", submittedAt: now });
-    renderHandover(currentVenueKey);
-    showToast("Handover moved to 'Submitted Handovers'");
+    var result = await persistCurrent({ status: "submitted", submittedAt: now });
+    if (!result.ok) return;
+    window.location.hash = "submitted?filter=submitted";
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft", submittedAt: null });
     renderHandover(currentVenueKey);
-    showToast("Handover moved to 'Open Handovers'");
   });
 
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
@@ -1561,14 +1638,26 @@
     if (isCurrentlyDeleted){
       btn.disabled = true;
       btn.textContent = "Restoring…";
-      await restoreRecord(currentVenueKey);
+      var restored = await restoreRecord(currentVenueKey);
+      if (!restored){
+        btn.disabled = false;
+        renderHandover(currentVenueKey);
+        showToast("Couldn't restore — check your connection");
+        return;
+      }
       renderHandover(currentVenueKey);
       return;
     }
     if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
     btn.disabled = true;
     btn.textContent = "Deleting…";
-    await softDeleteRecord(currentVenueKey);
+    var deleted = await softDeleteRecord(currentVenueKey);
+    if (!deleted){
+      btn.disabled = false;
+      renderHandover(currentVenueKey);
+      showToast("Couldn't delete — check your connection");
+      return;
+    }
     window.location.hash = "home";
   });
   document.getElementById("handover-back").addEventListener("click", function(){
@@ -1654,7 +1743,13 @@
             e.stopPropagation();
             restoreBtn.disabled = true;
             restoreBtn.textContent = "Restoring…";
-            await restoreRecord(r.venueKey);
+            var restored = await restoreRecord(r.venueKey);
+            if (!restored){
+              restoreBtn.disabled = false;
+              restoreBtn.textContent = "Restore";
+              showToast("Couldn't restore — check your connection");
+              return;
+            }
             renderSubmitted(filter);
           });
         } else {
@@ -1664,7 +1759,13 @@
             if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
             delBtn.disabled = true;
             delBtn.textContent = "Deleting…";
-            await softDeleteRecord(r.venueKey);
+            var deleted = await softDeleteRecord(r.venueKey);
+            if (!deleted){
+              delBtn.disabled = false;
+              delBtn.textContent = "Delete";
+              showToast("Couldn't delete — check your connection");
+              return;
+            }
             renderSubmitted(filter);
           });
         }
@@ -1674,8 +1775,13 @@
   }
 
   function escapeHtml(s){
-    if (!s) return s;
-    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    if (s === null || s === undefined) return "";
+    return String(s)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#039;");
   }
 
   document.getElementById("submitted-back").addEventListener("click", function(){
