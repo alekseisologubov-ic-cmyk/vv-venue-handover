@@ -1078,10 +1078,23 @@
 
   var ATTACHMENTS_BUCKET = "handover-files";
 
-  function renderFieldAttachmentChips(fieldId, locked){
+  async function ensureAttachmentUrl(a){
+    if (!a) return a;
+    if (SUPABASE_CONFIGURED && a.path && !a.url){
+      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 60 * 60);
+      if (!signed.error && signed.data && signed.data.signedUrl){
+        a.url = signed.data.signedUrl;
+      }
+    }
+    return a;
+  }
+
+  async function renderFieldAttachmentChips(fieldId, locked){
     var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
     if (!el) return;
     var list = currentFieldAttachments[fieldId] || [];
+    await Promise.all(list.map(ensureAttachmentUrl));
+    
     el.innerHTML = list.map(function(a, idx){
       var isImg = (a.type && a.type.indexOf("image/") === 0) || 
                   (a.url && (a.url.indexOf("data:image/") === 0 || a.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
@@ -1114,7 +1127,7 @@
     var next = Object.assign({}, currentFieldAttachments);
     next[fieldId] = (next[fieldId] || []).concat(uploaded);
     currentFieldAttachments = next;
-    renderFieldAttachmentChips(fieldId, false);
+    await renderFieldAttachmentChips(fieldId, false);
 
     await persistCurrent({ fieldAttachments: next });
     if (triggerEl) triggerEl.classList.remove("busy");
@@ -1127,7 +1140,7 @@
     var next = Object.assign({}, currentFieldAttachments);
     next[fieldId] = list;
     currentFieldAttachments = next;
-    renderFieldAttachmentChips(fieldId, false);
+    await renderFieldAttachmentChips(fieldId, false);
 
     await persistCurrent({ fieldAttachments: next });
     if (SUPABASE_CONFIGURED && removed && removed.path){
@@ -1163,6 +1176,8 @@
   }
 
   async function openAttachmentModal(a){
+    if (!a) return;
+    await ensureAttachmentUrl(a);
     var modal = document.getElementById("attachment-modal");
     var body = document.getElementById("attachment-modal-body");
     var nameEl = document.getElementById("attachment-modal-name");
@@ -1183,16 +1198,9 @@
     var isCsv = fileName.endsWith(".csv") || type === "text/csv";
 
     if (isImg){
-      var src = a.url;
-      try {
-        var res = await fetch(a.url);
-        var blob = await res.blob();
-        src = URL.createObjectURL(blob);
-        currentObjectUrl = src;
-      } catch(e) {}
       body.innerHTML = "";
       var img = document.createElement("img");
-      img.src = src;
+      img.src = a.url;
       img.alt = a.name || "";
       body.appendChild(img);
       return;
@@ -1346,7 +1354,7 @@
     return uploaded;
   }
 
-  function renderFileListUI(files, locked){
+  async function renderFileListUI(files, locked){
     var listEl = document.getElementById("attachments-grid");
     if (!listEl) return;
     document.getElementById("attachments-upload-row").style.display = locked ? "none" : "flex";
@@ -1358,6 +1366,9 @@
       listEl.innerHTML = '<em style="color:var(--vv-gray-mid); font-size:13px;">No files attached yet.</em>';
       return;
     }
+
+    await Promise.all(files.map(ensureAttachmentUrl));
+
     listEl.innerHTML = files.map(function(f, idx){
       var isImg = (f.type && f.type.indexOf("image/") === 0) || 
                   (f.url && (f.url.indexOf("data:image/") === 0 || f.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
