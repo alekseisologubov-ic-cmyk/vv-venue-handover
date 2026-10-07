@@ -289,6 +289,16 @@
     font-size:12px; padding:8px 14px; border-radius:20px; opacity:0; transition:opacity 0.3s ease; pointer-events:none;
   }
   .status-toast.show{opacity:0.92;}
+  .auth-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .auth-modal-backdrop{position:absolute;inset:0;background:rgba(20,10,30,0.48);}
+  .auth-modal-box{position:relative;width:min(420px,92vw);background:#fff;border-radius:12px;padding:26px;box-shadow:0 18px 50px rgba(20,10,30,0.24);}
+  .auth-modal-box h2{margin:0 0 8px;font-family:Poppins,'Segoe UI',Arial,sans-serif;color:var(--vv-squid-ink);}
+  .auth-modal-help{margin:0 0 18px;color:var(--vv-gray-mid);font-size:13px;line-height:1.5;}
+  .auth-modal-box label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:12px 0 6px;color:var(--vv-squid-ink);}
+  .auth-modal-box input{width:100%;box-sizing:border-box;border:1px solid #D9CBE2;border-radius:8px;padding:11px 12px;font:inherit;}
+  .auth-modal-box input:focus{outline:none;border-color:var(--vv-squid-ink);}
+  .auth-modal-error{min-height:18px;margin-top:10px;color:#A3262A;font-size:13px;}
+  .auth-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;}
 
   [data-view]{ display:none; }
   [data-view].active{ display:block; }
@@ -350,7 +360,7 @@
       </button>
       <button class="nav-card" id="btn-review-list">
         <span class="nav-card-title">In Review 🔒</span>
-        <span class="nav-card-desc">Password protected. Handovers sent for reviewer check and sign-off.</span>
+        <span class="nav-card-desc">Staff sign-in required. Handovers sent for reviewer check and sign-off.</span>
       </button>
       <button class="nav-card" id="btn-submitted">
         <span class="nav-card-title">Submitted Handovers</span>
@@ -358,7 +368,7 @@
       </button>
       <button class="nav-card" id="btn-manage">
         <span class="nav-card-title">Manage Venues</span>
-        <span class="nav-card-desc" id="manage-desc">Enable admin mode below to browse and reopen all venues.</span>
+        <span class="nav-card-desc" id="manage-desc">Admin sign-in required to browse and reopen all venues.</span>
       </button>
     </div>
     <button class="admin-pill off" id="btn-admin-toggle">Admin mode off</button>
@@ -495,6 +505,25 @@
 
 <div class="status-toast" id="toast">Saved</div>
 
+<div class="auth-modal" id="auth-modal" style="display:none;" aria-hidden="true">
+  <div class="auth-modal-backdrop" id="auth-modal-backdrop"></div>
+  <div class="auth-modal-box" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+    <h2 id="auth-modal-title">Staff sign in</h2>
+    <p class="auth-modal-help">Sign in with your Supabase account. Your role is assigned by the administrator.</p>
+    <form id="auth-form">
+      <label for="auth-email">Email</label>
+      <input id="auth-email" type="email" autocomplete="username" required>
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password" required>
+      <div class="auth-modal-error" id="auth-error" role="alert"></div>
+      <div class="auth-modal-actions">
+        <button type="button" class="btn-outline" id="auth-cancel">Cancel</button>
+        <button type="submit" class="btn-submit" id="auth-submit">Sign in</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="attachment-modal" id="attachment-modal" style="display:none;">
   <div class="attachment-modal-backdrop" id="attachment-modal-backdrop"></div>
   <div class="attachment-modal-box">
@@ -554,11 +583,14 @@
   ];
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
-  var ADMIN_KEY = "vv-admin-mode";
-  var REVIEWER_AUTH_KEY = "vv-reviewer-auth";
 
-  var ADMIN_PASSWORD = "handover2026";
-  var REVIEWER_PASSWORD = "handover2026!";
+  // Privileged access is controlled by Supabase Auth + app_metadata.role.
+  // Roles are never stored in localStorage/sessionStorage and are never selected by the user.
+  var authUser = null;
+  var authRole = null;
+  var authReady = false;
+  var authModalPurpose = null;
+  var authModalResolver = null;
 
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -709,17 +741,122 @@
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
   }
-  function readAdmin(){
-    try{ return localStorage.getItem(ADMIN_KEY) === "on"; }catch(e){ return false; }
+  function getAuthRole(){
+    return authRole || (authUser && authUser.app_metadata && authUser.app_metadata.role) || null;
   }
-  function writeAdmin(on){
-    try{ localStorage.setItem(ADMIN_KEY, on ? "on" : "off"); }catch(e){}
+  function hasRole(role){
+    var roleNow = getAuthRole();
+    return roleNow === "admin" || roleNow === role;
+  }
+  function readAdmin(){
+    return hasRole("admin");
   }
   function readReviewerAuth(){
-    try{ return sessionStorage.getItem(REVIEWER_AUTH_KEY) === "true"; }catch(e){ return false; }
+    return hasRole("reviewer");
   }
-  function writeReviewerAuth(ok){
-    try{ sessionStorage.setItem(REVIEWER_AUTH_KEY, ok ? "true" : "false"); }catch(e){}
+  function updateAuthUI(){
+    var admin = readAdmin();
+    var btn = document.getElementById("btn-admin-toggle");
+    if (btn){
+      btn.textContent = admin ? "Admin mode on" : "Admin sign in";
+      btn.className = "admin-pill " + (admin ? "on" : "off");
+      btn.setAttribute("aria-label", admin ? "Sign out of admin mode" : "Sign in for admin mode");
+    }
+    var reviewBtn = document.getElementById("btn-review-list");
+    if (reviewBtn){
+      reviewBtn.querySelector(".nav-card-desc").textContent = readReviewerAuth()
+        ? "Open handovers awaiting reviewer check and sign-off."
+        : "Staff sign in required. Reviewer/admin role needed.";
+    }
+  }
+
+  function setAuthSession(session){
+    authUser = session && session.user ? session.user : null;
+    authRole = authUser && authUser.app_metadata ? authUser.app_metadata.role || null : null;
+    authReady = true;
+    updateAuthUI();
+    if (window.location.hash) route();
+  }
+
+  async function initAuth(){
+    if (!SUPABASE_CONFIGURED || !sb){
+      authReady = true;
+      updateAuthUI();
+      return;
+    }
+    var res = await sb.auth.getSession();
+    if (res.error){
+      console.error("Auth session error:", res.error);
+      authReady = true;
+      updateAuthUI();
+      return;
+    }
+    setAuthSession(res.data.session);
+    sb.auth.onAuthStateChange(function(_event, session){
+      setAuthSession(session);
+    });
+  }
+
+  function openAuthModal(purpose){
+    return new Promise(function(resolve){
+      authModalPurpose = purpose;
+      authModalResolver = resolve;
+      var modal = document.getElementById("auth-modal");
+      var error = document.getElementById("auth-error");
+      var email = document.getElementById("auth-email");
+      var password = document.getElementById("auth-password");
+      error.textContent = "";
+      password.value = "";
+      modal.style.display = "flex";
+      modal.setAttribute("aria-hidden", "false");
+      setTimeout(function(){ email.focus(); }, 0);
+    });
+  }
+
+  function closeAuthModal(result){
+    var modal = document.getElementById("auth-modal");
+    modal.style.display = "none";
+    modal.setAttribute("aria-hidden", "true");
+    var resolver = authModalResolver;
+    authModalResolver = null;
+    authModalPurpose = null;
+    if (resolver) resolver(result);
+  }
+
+  async function ensureRole(requiredRole){
+    if (!SUPABASE_CONFIGURED){
+      showToast("Supabase Auth is required for privileged access");
+      return false;
+    }
+    if (!authReady){
+      showToast("Checking sign-in status…");
+      return false;
+    }
+    if (hasRole(requiredRole)) return true;
+
+    var signedIn = await openAuthModal(requiredRole);
+    if (!signedIn) return false;
+
+    var roleNow = getAuthRole();
+    if (roleNow === "admin" || roleNow === requiredRole) return true;
+
+    showToast("Your account does not have the required role");
+    return false;
+  }
+
+  async function signOut(){
+    if (SUPABASE_CONFIGURED && sb){
+      var res = await sb.auth.signOut();
+      if (res.error){
+        console.error("Sign out error:", res.error);
+        showToast("Couldn't sign out");
+        return false;
+      }
+    }
+    authUser = null;
+    authRole = null;
+    updateAuthUI();
+    return true;
   }
 
   var toastTimer = null;
@@ -754,8 +891,20 @@
       showView("handover");
       renderHandover(r.params.get("v") || "");
     } else if (r.path === "submitted"){
+      var requestedFilter = ["all", "draft", "in_review", "submitted"].indexOf(r.params.get("filter")) !== -1
+        ? r.params.get("filter") : "submitted";
+      if (requestedFilter === "all" && !readAdmin()){
+        showView("home");
+        renderHome();
+        return;
+      }
+      if (requestedFilter === "in_review" && !readReviewerAuth()){
+        showView("home");
+        renderHome();
+        return;
+      }
       showView("submitted");
-      renderSubmitted(["all", "draft", "in_review"].indexOf(r.params.get("filter")) !== -1 ? r.params.get("filter") : "submitted");
+      renderSubmitted(requestedFilter);
     } else {
       showView("home");
       renderHome();
@@ -776,19 +925,13 @@
     document.getElementById("manage-desc").textContent = "Browse every venue, draft or submitted, and reopen as needed.";
   }
 
-  document.getElementById("btn-admin-toggle").addEventListener("click", function(){
+  document.getElementById("btn-admin-toggle").addEventListener("click", async function(){
     if (readAdmin()){
-      writeAdmin(false);
+      await signOut();
       renderHome();
       return;
     }
-    var entered = window.prompt("Enter the admin password:");
-    if (entered === null) return;
-    if (entered !== ADMIN_PASSWORD){
-      window.alert("Incorrect password.");
-      return;
-    }
-    writeAdmin(true);
+    await ensureRole("admin");
     renderHome();
   });
 
@@ -800,16 +943,8 @@
     window.location.hash = "submitted?filter=draft";
   });
 
-  document.getElementById("btn-review-list").addEventListener("click", function(){
-    if (!readReviewerAuth()) {
-      var pass = window.prompt("Enter Reviewer Password:");
-      if (pass === REVIEWER_PASSWORD) {
-        writeReviewerAuth(true);
-        window.location.hash = "submitted?filter=in_review";
-      } else if (pass !== null) {
-        window.alert("Incorrect reviewer password.");
-      }
-    } else {
+  document.getElementById("btn-review-list").addEventListener("click", async function(){
+    if (await ensureRole("reviewer")){
       window.location.hash = "submitted?filter=in_review";
     }
   });
@@ -1672,10 +1807,12 @@
     if (localBanner) localBanner.style.display = SUPABASE_CONFIGURED ? "none" : "block";
 
     var admin = readAdmin();
+    var reviewer = readReviewerAuth();
     var showingAll = filter === "all";
     var showingDraft = filter === "draft";
     var showingReview = filter === "in_review";
-    var blocked = showingAll && !admin;
+    var showingSubmitted = filter === "submitted";
+    var blocked = (showingAll && !admin) || (showingReview && !reviewer);
 
     document.getElementById("submitted-title").textContent = showingAll
       ? "Manage Venues"
@@ -1693,7 +1830,13 @@
       ? "Handovers awaiting reviewer approval and final submission."
       : "Completed handovers and their follow-up points.";
 
-    document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
+    var blockedBanner = document.getElementById("submitted-blocked-banner");
+    blockedBanner.style.display = blocked ? "block" : "none";
+    if (blocked){
+      blockedBanner.textContent = showingReview
+        ? "Reviewer sign-in is required to view handovers in review."
+        : "Admin sign-in is required to browse and manage every venue.";
+    }
 
     var listEl = document.getElementById("submitted-list");
     listEl.innerHTML = "";
@@ -1789,7 +1932,46 @@
   });
 
   if (!window.location.hash) window.location.hash = "home";
+  updateAuthUI();
+  initAuth();
   route();
+
+  document.getElementById("auth-cancel").addEventListener("click", function(){
+    closeAuthModal(false);
+  });
+  document.getElementById("auth-modal-backdrop").addEventListener("click", function(){
+    closeAuthModal(false);
+  });
+  document.getElementById("auth-form").addEventListener("submit", async function(e){
+    e.preventDefault();
+    if (!SUPABASE_CONFIGURED || !sb){
+      document.getElementById("auth-error").textContent = "Supabase Auth is not configured.";
+      return;
+    }
+    var submit = document.getElementById("auth-submit");
+    var email = document.getElementById("auth-email").value.trim();
+    var password = document.getElementById("auth-password").value;
+    var error = document.getElementById("auth-error");
+    submit.disabled = true;
+    submit.textContent = "Signing in…";
+    error.textContent = "";
+    var res = await sb.auth.signInWithPassword({ email: email, password: password });
+    submit.disabled = false;
+    submit.textContent = "Sign in";
+    if (res.error){
+      console.error("Sign in error:", res.error);
+      error.textContent = "Sign-in failed. Check your email and password.";
+      return;
+    }
+    var user = res.data && res.data.user;
+    var role = user && user.app_metadata ? user.app_metadata.role || null : null;
+    if (!role){
+      await sb.auth.signOut();
+      error.textContent = "This account has no application role. Ask an administrator to assign one.";
+      return;
+    }
+    closeAuthModal(true);
+  });
 })();
 </script>
 
