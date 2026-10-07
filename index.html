@@ -359,23 +359,18 @@
     <div class="nav-grid">
       <button class="nav-card" id="btn-create">
         <span class="nav-card-title">Create Handover</span>
-        <span class="nav-card-desc">Start a new venue handover.</span>
       </button>
       <button class="nav-card" id="btn-open">
         <span class="nav-card-title">Open Handovers</span>
-        <span class="nav-card-desc">Continue handovers that are in draft mode.</span>
       </button>
       <button class="nav-card" id="btn-review-list">
         <span class="nav-card-title">In Review 🔒</span>
-        <span class="nav-card-desc">Password protected. Handovers sent for reviewer check and sign-off.</span>
       </button>
       <button class="nav-card" id="btn-submitted">
         <span class="nav-card-title">Submitted Handovers</span>
-        <span class="nav-card-desc">Review completed handovers and flagged follow-up points.</span>
       </button>
       <button class="nav-card" id="btn-manage">
         <span class="nav-card-title">Manage Venues</span>
-        <span class="nav-card-desc" id="manage-desc">Enable admin mode below to browse and reopen all venues.</span>
       </button>
     </div>
     <button class="admin-pill off" id="btn-admin-toggle">Admin mode off</button>
@@ -800,7 +795,6 @@
     btn.className = "admin-pill " + (admin ? "on" : "off");
 
     document.getElementById("btn-manage").style.display = admin ? "flex" : "none";
-    document.getElementById("manage-desc").textContent = "Browse every venue, draft or submitted, and reopen as needed.";
   }
 
   document.getElementById("btn-admin-toggle").addEventListener("click", function(){
