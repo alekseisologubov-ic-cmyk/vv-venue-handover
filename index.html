@@ -174,7 +174,7 @@
   .attachment-thumb{
     display:flex; align-items:center; justify-content:center;
     width:100%; aspect-ratio:1/1; border-radius:6px; overflow:hidden;
-    background:#EFE8F2; font-size:28px; text-decoration:none; color:inherit;
+    background:#EFE8F2; font-size:28px; text-decoration:none;
   }
   .attachment-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
   .attachment-meta{ display:flex; flex-direction:column; gap:1px; }
@@ -184,7 +184,7 @@
   }
   .attachment-size{ font-size:10.5px; color:var(--vv-gray-mid); }
   .attachment-remove{
-    position:absolute; top:4px; right:4px; z-index:2;
+    position:absolute; top:4px; right:4px;
     width:20px; height:20px; border-radius:50%; border:none;
     background:rgba(27,27,27,0.75); color:#fff; font-size:14px; line-height:1;
     cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -199,6 +199,10 @@
   }
   .attachments-hint{ font-size:12px; color:var(--vv-gray-mid); }
   .attachments-error{ margin:10px 0 0; font-size:12.5px; color:var(--vv-red-deep); }
+  .attachment-row{ font-size:13.5px; padding:6px 0; border-bottom:1px solid #F0EAF4; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+  .attachment-row:last-child{ border-bottom:none; }
+  .attachment-row a{ color:var(--vv-squid-ink); font-weight:600; }
+  .attachment-remove-link{ color:var(--vv-red-deep) !important; font-weight:400 !important; font-size:12px; }
 
   /* ---- sections + cards ---- */
   .section-wrap{ margin-bottom:28px; }
@@ -216,10 +220,10 @@
   textarea:focus{ outline:none; border-color:var(--vv-red); }
 
   /* per-field attachments */
-  .field-attach-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .field-attach-chips{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
   .field-attach-chips:empty{ margin-top:0; }
   .field-attach-chip{
-    font-size:11.5px; color:var(--vv-body-text); display:flex; align-items:center; gap:4px;
+    font-size:11.5px; color:var(--vv-body-text); display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   }
   .field-attach-chip a{ color:var(--vv-squid-ink); text-decoration:none; font-weight:600; }
   .field-attach-chip a:hover{ text-decoration:underline; }
@@ -286,7 +290,7 @@
   .attachment-modal-backdrop{ position:absolute; inset:0; background:rgba(20,10,30,0.72); }
   .attachment-modal-box{
     position:relative; background:#fff; border-radius:10px; max-width:min(900px, 92vw); max-height:88vh;
-    display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.35);
+    display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.35); width:100%;
   }
   .attachment-modal-header{
     display:flex; align-items:center; gap:14px; padding:12px 16px; border-bottom:1px solid #EFE8F2;
@@ -303,6 +307,11 @@
   .attachment-modal-body img{ max-width:100%; max-height:76vh; display:block; border-radius:4px; }
   .attachment-modal-body iframe{ width:min(820px, 86vw); height:72vh; border:none; }
   .attachment-modal-unsupported{ text-align:center; color:var(--vv-gray-mid); font-size:14px; padding:30px; }
+
+  /* Custom table styling inside modal for previewing CSV/spreadsheet files */
+  .doc-preview-table { border-collapse: collapse; width: 100%; font-size: 13px; font-family: sans-serif; }
+  .doc-preview-table th, .doc-preview-table td { border: 1px solid #D9CBE2; padding: 6px 10px; text-align: left; }
+  .doc-preview-table th { background: #F5F1F7; color: var(--vv-squid-ink); font-weight: 700; }
 
   @media (max-width:640px){ .band-inner{align-items:flex-start;} }
 </style>
@@ -985,25 +994,17 @@
     var el = document.querySelector('.field-attach-chips[data-attach-list="' + fieldId + '"]');
     if (!el) return;
     var list = currentFieldAttachments[fieldId] || [];
-    
-    el.style.display = "flex";
-    el.style.flexWrap = "wrap";
-    el.style.gap = "6px";
-    
     el.innerHTML = list.map(function(a, idx){
       var isImg = (a.type && a.type.indexOf("image/") === 0) || 
                   (a.url && (a.url.indexOf("data:image/") === 0 || a.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
       var removeLink = locked ? "" :
-        ' <button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '" style="margin-left:4px; font-weight:bold;">×</button>';
+        ' <button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '">×</button>';
       
-      if (isImg) {
-        return '<div style="position:relative; width:50px; height:50px; border-radius:6px; overflow:hidden; border:1px solid #E3D8EA; background:#f0f0f0;">' +
-          '<a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '"><img src="' + a.url + '" style="width:100%; height:100%; object-fit:cover;"></a>' +
-          (locked ? '' : '<button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '" style="position:absolute; top:2px; right:2px; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:16px; height:16px; font-size:10px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;">×</button>') +
-        '</div>';
-      }
+      var imgPreview = isImg
+        ? '<a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '"><img src="' + a.url + '" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #E3D8EA; vertical-align:middle; display:inline-block;"></a> '
+        : '';
 
-      return '<div class="field-attach-chip">📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
+      return '<div class="field-attach-chip">' + imgPreview + '📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
     }).join("");
 
     el.querySelectorAll("[data-open-field]").forEach(function(a){
@@ -1062,7 +1063,7 @@
   });
 
   // ---------------------------------------------------------------
-  // Attachment preview modal
+  // Attachment preview modal — Image, PDF, Office Doc & CSV Previews
   // ---------------------------------------------------------------
   var currentObjectUrl = null;
 
@@ -1082,451 +1083,81 @@
     nameEl.textContent = a.name || "Attachment";
     newTabLink.href = a.url;
     revokeCurrentObjectUrl();
-    body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Loading…</span>';
+    body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Loading preview…</span>';
     modal.style.display = "flex";
 
-    var type = a.type || "";
-    var previewable = type.indexOf("image/") === 0 || type === "application/pdf";
+    var type = (a.type || "").toLowerCase();
+    var fileName = (a.name || "").toLowerCase();
 
-    var src = a.url;
-    if (previewable){
-      try{
+    var isImg = type.indexOf("image/") === 0 || fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    var isPdf = type === "application/pdf" || fileName.endsWith(".pdf");
+    var isOffice = fileName.match(/\.(doc|docx|xls|xlsx|ppt|pptx)$/i);
+    var isCsv = fileName.endsWith(".csv") || type === "text/csv";
+
+    // 1. Image preview
+    if (isImg){
+      var src = a.url;
+      try {
         var res = await fetch(a.url);
         var blob = await res.blob();
         src = URL.createObjectURL(blob);
         currentObjectUrl = src;
-      }catch(e){
-        console.error("Couldn't fetch attachment for inline preview:", e);
-      }
-    }
-
-    body.innerHTML = "";
-    if (type.indexOf("image/") === 0){
+      } catch(e) {}
+      body.innerHTML = "";
       var img = document.createElement("img");
       img.src = src;
       img.alt = a.name || "";
       body.appendChild(img);
-    } else if (type === "application/pdf"){
+      return;
+    }
+
+    // 2. PDF preview
+    if (isPdf){
+      var pdfSrc = a.url;
+      try {
+        var resPdf = await fetch(a.url);
+        var blobPdf = await resPdf.blob();
+        pdfSrc = URL.createObjectURL(blobPdf);
+        currentObjectUrl = pdfSrc;
+      } catch(e) {}
+      body.innerHTML = "";
       var iframe = document.createElement("iframe");
-      iframe.src = src;
+      iframe.src = pdfSrc;
       body.appendChild(iframe);
-    } else {
-      var msg = document.createElement("div");
-      msg.className = "attachment-modal-unsupported";
-      msg.textContent = "This file type can't be previewed here — use \"Open in new tab\" above.";
-      body.appendChild(msg);
+      return;
     }
-  }
-  function closeAttachmentModal(){
-    document.getElementById("attachment-modal").style.display = "none";
-    document.getElementById("attachment-modal-body").innerHTML = "";
-    revokeCurrentObjectUrl();
-  }
-  document.getElementById("attachment-modal-close").addEventListener("click", closeAttachmentModal);
-  document.getElementById("attachment-modal-backdrop").addEventListener("click", closeAttachmentModal);
-  document.addEventListener("keydown", function(e){
-    if (e.key === "Escape" && document.getElementById("attachment-modal").style.display !== "none") closeAttachmentModal();
-  });
 
-  function formatBytes(bytes){
-    if (!bytes && bytes !== 0) return "";
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024*1024) return Math.round(bytes/1024) + " KB";
-    return (bytes/(1024*1024)).toFixed(1) + " MB";
-  }
-
-  function fileToDataUrl(file){
-    return new Promise(function(resolve, reject){
-      var reader = new FileReader();
-      reader.onload = function(){ resolve(reader.result); };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function uploadFiles(venueKey, fileList){
-    var files = Array.from(fileList || []);
-    var maxBytes = SUPABASE_CONFIGURED ? 15*1024*1024 : 2*1024*1024;
-    var uploaded = [];
-    var errEl = document.getElementById("attachments-error");
-    errEl.style.display = "none";
-
-    for (var i = 0; i < files.length; i++){
-      var file = files[i];
-      if (file.size > maxBytes){
-        errEl.textContent = '"' + file.name + '" is over ' + (SUPABASE_CONFIGURED ? "15 MB" : "2 MB") + ' and was skipped.';
-        errEl.style.display = "block";
-        continue;
-      }
-
-      if (SUPABASE_CONFIGURED){
-        var path = venueKey + "/" + Date.now() + "_" + file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-        var up = await sb.storage.from(ATTACHMENTS_BUCKET).upload(path, file, { contentType: file.type || undefined });
-        if (up.error){
-          console.error("Upload error:", up.error.message);
-          errEl.textContent = (up.error.message || "").indexOf("Bucket not found") !== -1
-            ? "Storage bucket isn't set up yet — run supabase_setup_handovers.sql."
-            : 'Couldn\'t upload "' + file.name + '": ' + (up.error.message || "unknown error");
-          errEl.style.display = "block";
-          continue;
-        }
-        var pub = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
-        uploaded.push({ path: path, url: (pub.data && pub.data.publicUrl) || "", name: file.name, type: file.type || "", size: file.size });
+    // 3. Office Document Preview (.doc, .docx, .xls, .xlsx, etc.)
+    if (isOffice){
+      // If the file is hosted online (via Supabase), embed Microsoft's Office Viewer
+      if (a.url && a.url.indexOf("http") === 0 && a.url.indexOf("data:") !== 0){
+        body.innerHTML = "";
+        var officeIframe = document.createElement("iframe");
+        officeIframe.src = "https://view.officeapps.live.com/op/embed.aspx?src=" + encodeURIComponent(a.url);
+        body.appendChild(officeIframe);
+        return;
       } else {
-        try{
-          var dataUrl = await fileToDataUrl(file);
-          uploaded.push({ path: null, url: dataUrl, name: file.name, type: file.type || "", size: file.size });
-        }catch(e){
-          console.error(e);
-          errEl.textContent = 'Couldn\'t read "' + file.name + '".';
-          errEl.style.display = "block";
+        // Local Data URL preview fallback: render extracted text content
+        try {
+          var base64Data = a.url.split(",")[1];
+          var binaryStr = atob(base64Data);
+          var printableText = binaryStr.replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s+/g, " ");
+          
+          body.innerHTML = "";
+          var container = document.createElement("div");
+          container.style.cssText = "width:100%; max-height:70vh; overflow:auto; text-align:left; padding:15px; background:#fafafa; border:1px solid #E3D8EA; font-family:serif; line-height:1.6; font-size:14px; color:#333;";
+          container.innerHTML = "<strong style='display:block; margin-bottom:10px; color:var(--vv-squid-ink); font-family:sans-serif;'>" + escapeHtml(a.name) + " (Text Preview)</strong>" + escapeHtml(printableText.substring(0, 5000));
+          body.appendChild(container);
+          return;
+        } catch(err) {
+          console.error("Local Office file parse error", err);
         }
       }
     }
-    return uploaded;
-  }
 
-  function renderFileListUI(files, locked){
-    var listEl = document.getElementById("attachments-grid");
-    if (!listEl) return;
-    document.getElementById("attachments-upload-row").style.display = locked ? "none" : "flex";
-    document.getElementById("attachments-hint").textContent = SUPABASE_CONFIGURED
-      ? "Up to 15 MB per file."
-      : "Up to 2 MB per file (saved on this device only).";
-
-    if (!files || files.length === 0){
-      listEl.innerHTML = '<em style="color:var(--vv-gray-mid); font-size:13px;">No files attached yet.</em>';
-      return;
-    }
-
-    listEl.style.display = "grid";
-    listEl.style.gridTemplateColumns = "repeat(auto-fill, minmax(130px, 1fr))";
-    listEl.style.gap = "12px";
-
-    listEl.innerHTML = files.map(function(f, idx){
-      var isImg = (f.type && f.type.indexOf("image/") === 0) || 
-                  (f.url && (f.url.indexOf("data:image/") === 0 || f.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
-      var sizeTxt = formatBytes(f.size);
-      
-      var previewHtml = isImg
-        ? '<img src="' + f.url + '" alt="' + escapeHtml(f.name) + '" style="width:100%; height:100%; object-fit:cover;">'
-        : '<span style="font-size:28px;">📄</span>';
-
-      var removeBtn = locked ? "" :
-        '<button type="button" class="attachment-remove" data-remove-idx="' + idx + '" title="Remove">×</button>';
-
-      return '<div class="attachment-tile">' +
-        removeBtn +
-        '<a href="#" class="attachment-thumb" data-open-main="' + idx + '">' + previewHtml + '</a>' +
-        '<div class="attachment-meta">' +
-          '<div class="attachment-name" title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</div>' +
-          (sizeTxt ? '<div class="attachment-size">' + sizeTxt + '</div>' : '') +
-        '</div>' +
-      '</div>';
-    }).join("");
-
-    listEl.querySelectorAll("[data-open-main]").forEach(function(a){
-      a.addEventListener("click", function(e){
-        e.preventDefault();
-        openAttachmentModal(currentAttachments[parseInt(a.getAttribute("data-open-main"), 10)]);
-      });
-    });
-
-    if (!locked){
-      listEl.querySelectorAll("[data-remove-idx]").forEach(function(btn){
-        btn.addEventListener("click", async function(e){
-          e.preventDefault();
-          e.stopPropagation();
-          var idx = parseInt(btn.getAttribute("data-remove-idx"), 10);
-          var removed = currentAttachments[idx];
-          currentAttachments = currentAttachments.slice(0, idx).concat(currentAttachments.slice(idx + 1));
-          renderFileListUI(currentAttachments, locked);
-          await persistCurrent({ attachments: currentAttachments });
-          if (SUPABASE_CONFIGURED && removed && removed.path){
-            var del = await sb.storage.from(ATTACHMENTS_BUCKET).remove([removed.path]);
-            if (del.error) console.error(del.error);
-          }
-        });
-      });
-    }
-  }
-
-  var syncDot = null, syncLabel = null;
-  function setSyncStatus(mode){
-    if (!syncDot) syncDot = document.querySelector(".sync-bar .dot");
-    if (!syncLabel) syncLabel = document.getElementById("sync-label");
-    if (!syncDot) return;
-    syncDot.className = "dot " + (mode === "error" ? "error" : mode === "saving" ? "saving" : mode === "live" ? "live" : "off");
-    if (syncLabel){
-      syncLabel.textContent = mode === "error"
-        ? "Couldn't save — check your connection"
-        : SUPABASE_CONFIGURED
-        ? (mode === "saving" ? "Saving…" : "Synced — live for anyone with this venue link")
-        : "Saved on this device";
-    }
-  }
-
-  async function renderHandover(venueKey){
-    currentVenueKey = venueKey;
-    unsubscribeCurrentChannel();
-
-    var fieldset = document.getElementById("handover-fieldset");
-    var noVenueNote = document.getElementById("no-venue-note");
-
-    if (!venueKey){
-      updateVenueToggleLabel("");
-      document.getElementById("handover-title").textContent = "Venue Handover";
-      document.getElementById("handover-status-badge").style.display = "none";
-      document.getElementById("btn-submit-handover").style.display = "none";
-      document.getElementById("btn-reopen-handover").style.display = "none";
-      document.getElementById("locked-note").style.display = "none";
-      document.getElementById("btn-delete-handover").style.display = "none";
-      fieldset.style.display = "none";
-      if (noVenueNote) noVenueNote.style.display = "block";
-      setSyncStatus(SUPABASE_CONFIGURED ? "live" : "live");
-      return;
-    }
-    fieldset.style.display = "";
-    if (noVenueNote) noVenueNote.style.display = "none";
-    document.getElementById("handover-status-badge").style.display = "";
-
-    var bannerWrap = document.getElementById("handover-config-banner-wrap");
-    if (bannerWrap){
-      bannerWrap.innerHTML = SUPABASE_CONFIGURED
-        ? ""
-        : '<div class="config-banner"><strong>Supabase isn\u2019t connected.</strong> ' +
-          "This handover is saving to this device only \u2014 fill in <code>SUPABASE_URL</code> / " +
-          "<code>SUPABASE_ANON_KEY</code> near the top of the script to sync across devices.</div>";
-    }
-
-    setSyncStatus(SUPABASE_CONFIGURED ? "saving" : "live");
-
-    var rec = await fetchHandoverRecord(venueKey);
-    var all0 = SUPABASE_CONFIGURED ? null : localLoadAll();
-    if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec);
-    if (venueKey !== currentVenueKey) return;
-
-    applyRecordToForm(venueKey, rec);
-    setSyncStatus("live");
-
-    var hashParams = (function(){
-      var h = window.location.hash.replace(/^#/, "");
-      var qIndex = h.indexOf("?");
-      return new URLSearchParams(qIndex === -1 ? "" : h.slice(qIndex + 1));
-    })();
-    var locked = rec.status === "submitted" && !readAdmin();
-    if (hashParams.get("new") === "1" && !locked){
-      document.getElementById("f-ship").focus();
-    }
-
-    if (SUPABASE_CONFIGURED){
-      currentChannel = sb
-        .channel("handovers:" + venueKey)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "handovers", filter: "id=eq." + venueKey },
-          function(payload){
-            if (skipNextRealtime){ skipNextRealtime = false; return; }
-            if (!payload.new) return;
-            applyRecordToForm(venueKey, rowToRecord(payload.new));
-          }
-        )
-        .subscribe();
-    }
-  }
-
-  function currentFormValues(){
-    var fields = {};
-    document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
-      fields[ta.getAttribute("data-field-id")] = ta.value;
-    });
-    return {
-      ship: document.getElementById("f-ship").value,
-      outgoing: document.getElementById("f-outgoing").value,
-      incoming: document.getElementById("f-incoming").value,
-      date: document.getElementById("f-date").value,
-      fields: fields
-    };
-  }
-
-  async function persistCurrent(overrides){
-    var venueKey = currentVenueKey;
-    var existing = await fetchHandoverRecord(venueKey);
-    var vals = currentFormValues();
-
-    var attachments = (overrides && overrides.attachments) || existing.attachments || [];
-
-    var fileInput = document.getElementById("file-input");
-    if (fileInput && fileInput.files && fileInput.files.length > 0){
-      var newFiles = await uploadFiles(venueKey, fileInput.files);
-      attachments = attachments.concat(newFiles);
-      fileInput.value = "";
-    }
-
-    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
-    if (SUPABASE_CONFIGURED) skipNextRealtime = true;
-    var ok = await saveRecord(venueKey, next);
-
-    if (!ok){
-      setSyncStatus("error");
-      showToast("Couldn't save — check your connection and try again");
-      return next;
-    }
-
-    currentAttachments = attachments;
-    document.getElementById("footer-date").textContent = formatDateDisplay(next.date) || "—";
-    document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
-    renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
-    setSyncStatus("live");
-    showToast("Saved");
-    return next;
-  }
-
-  function scheduleSave(){
-    setSyncStatus("saving");
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){ persistCurrent(); }, 500);
-  }
-
-  document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
-
-  document.getElementById("file-input").addEventListener("change", function(){
-    persistCurrent();
-  });
-
-  document.getElementById("btn-submit-handover").addEventListener("click", async function(){
-    var now = new Date().toISOString();
-    await persistCurrent({ status: "submitted", submittedAt: now });
-    renderHandover(currentVenueKey);
-  });
-  document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
-    await persistCurrent({ status: "draft", submittedAt: null });
-    renderHandover(currentVenueKey);
-  });
-  document.getElementById("btn-delete-handover").addEventListener("click", async function(){
-    var btn = document.getElementById("btn-delete-handover");
-    var label = venueKeyDisplay(currentVenueKey) || currentVenueKey;
-    var isCurrentlyDeleted = btn.textContent.indexOf("Restore") === 0;
-
-    if (isCurrentlyDeleted){
-      btn.disabled = true;
-      btn.textContent = "Restoring…";
-      await restoreRecord(currentVenueKey);
-      renderHandover(currentVenueKey);
-      return;
-    }
-    if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
-    btn.disabled = true;
-    btn.textContent = "Deleting…";
-    await softDeleteRecord(currentVenueKey);
-    window.location.hash = "home";
-  });
-  document.getElementById("handover-back").addEventListener("click", function(){
-    window.location.hash = "home";
-  });
-
-  // ---------------------------------------------------------------
-  // SUBMITTED / MANAGE LIST
-  // ---------------------------------------------------------------
-  async function renderSubmitted(filter){
-    var localBanner = document.getElementById("submitted-local-banner");
-    if (localBanner) localBanner.style.display = SUPABASE_CONFIGURED ? "none" : "block";
-
-    var admin = readAdmin();
-    var showingAll = filter === "all";
-    var showingDraft = filter === "draft";
-    var blocked = showingAll && !admin;
-
-    document.getElementById("submitted-title").textContent = showingAll
-      ? "Manage Venues"
-      : showingDraft
-      ? "Open Handovers"
-      : "Submitted Handovers";
-    document.getElementById("submitted-subtitle").textContent = showingAll
-      ? "Every venue on record, draft or submitted."
-      : showingDraft
-      ? "Handovers that have been started but not submitted yet."
-      : "Completed handovers and their follow-up points.";
-    document.getElementById("submitted-blocked-banner").style.display = blocked ? "block" : "none";
-
-    var listEl = document.getElementById("submitted-list");
-    listEl.innerHTML = "";
-    if (blocked) return;
-
-    listEl.innerHTML = '<p class="list-empty">Loading…</p>';
-    var statusFilter = showingAll ? null : showingDraft ? "draft" : "submitted";
-    var rows = await listRecords(statusFilter, showingAll);
-    listEl.innerHTML = "";
-
-    if (rows.length === 0){
-      listEl.innerHTML = '<p class="list-empty">Nothing here yet.</p>';
-      return;
-    }
-
-    rows.forEach(function(r){
-      var isDeleted = !!r.deletedAt;
-      var row = document.createElement("div");
-      row.className = "list-row";
-      row.tabIndex = 0;
-      row.innerHTML =
-        '<div>' +
-          '<div class="list-row-title">' + (escapeHtml(r.ship) || escapeHtml(venueKeyDisplay(r.venueKey)) || r.venueKey) + '</div>' +
-          '<div class="list-row-sub">' + (escapeHtml(r.outgoing) || "—") + ' → ' + (escapeHtml(r.incoming) || "—") + '</div>' +
-        '</div>' +
-        '<div class="list-row-right">' +
-          '<span class="status-badge ' + (isDeleted ? "deleted" : r.status === "submitted" ? "submitted" : "draft") + '">' +
-            (isDeleted ? "Deleted" : r.status === "submitted" ? "Submitted" : "Draft") +
-          '</span>' +
-          '<span class="list-row-date">' + (r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "")) + '</span>' +
-          (admin ? (isDeleted
-            ? '<button type="button" class="list-row-restore">Restore</button>'
-            : '<button type="button" class="list-row-delete">Delete</button>') : '') +
-        '</div>';
-
-      function goToRow(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
-      row.addEventListener("click", goToRow);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter") goToRow(); });
-
-      if (admin){
-        var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
-        if (isDeleted){
-          var restoreBtn = row.querySelector(".list-row-restore");
-          restoreBtn.addEventListener("click", async function(e){
-            e.stopPropagation();
-            restoreBtn.disabled = true;
-            restoreBtn.textContent = "Restoring…";
-            await restoreRecord(r.venueKey);
-            renderSubmitted(filter);
-          });
-        } else {
-          var delBtn = row.querySelector(".list-row-delete");
-          delBtn.addEventListener("click", async function(e){
-            e.stopPropagation();
-            if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
-            delBtn.disabled = true;
-            delBtn.textContent = "Deleting…";
-            await softDeleteRecord(r.venueKey);
-            renderSubmitted(filter);
-          });
-        }
-      }
-      listEl.appendChild(row);
-    });
-  }
-
-  function escapeHtml(s){
-    if (!s) return s;
-    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  }
-
-  document.getElementById("submitted-back").addEventListener("click", function(){
-    window.location.hash = "home";
-  });
-
-  if (!window.location.hash) window.location.hash = "home";
-  route();
-})();
-</script>
-
-</body>
-</html>
+    // 4. CSV File Preview: render as styled HTML Table
+    if (isCsv){
+      try {
+        var textContent = "";
+        if (a.url.indexOf("data:") === 0) {
+          var base64Str = a
