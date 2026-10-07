@@ -151,6 +151,8 @@
   .btn-submit:hover{ background:var(--vv-red-light); }
   .btn-review{ border:none; background:var(--vv-squid-ink); color:#fff; font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .btn-review:hover{ background:var(--vv-squid-ink-light); }
+  .btn-sendback{ border:1px solid var(--vv-red); background:#fff; color:var(--vv-red); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
+  .btn-sendback:hover{ background:var(--vv-red); color:#fff; }
   .btn-outline{ border:1px solid var(--vv-squid-ink); background:transparent; color:var(--vv-squid-ink); font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase; border-radius:20px; padding:8px 18px; cursor:pointer; }
   .locked-note{ font-size:12.5px; color:var(--vv-gray-mid); }
 
@@ -168,6 +170,9 @@
   .attachments-card{
     background:var(--vv-white); border-top:3px solid var(--vv-squid-ink); border-radius:10px;
     padding:18px 20px; margin-bottom:22px; box-shadow:0 2px 10px rgba(60,16,83,0.08);
+  }
+  .attachments-card.reviewer-card{
+    border-top:3px solid #856404; background:#FFFDF5;
   }
   .attachments-list{ margin:10px 0 14px; }
   .attachment-tile{
@@ -344,8 +349,8 @@
         <span class="nav-card-desc">Continue handovers that are in draft mode.</span>
       </button>
       <button class="nav-card" id="btn-review-list">
-        <span class="nav-card-title">In Review</span>
-        <span class="nav-card-desc">Handovers sent for reviewer check and sign-off.</span>
+        <span class="nav-card-title">In Review 🔒</span>
+        <span class="nav-card-desc">Password protected. Handovers sent for reviewer check and sign-off.</span>
       </button>
       <button class="nav-card" id="btn-submitted">
         <span class="nav-card-title">Submitted Handovers</span>
@@ -396,9 +401,10 @@
       </div>
       <span style="flex:1"></span>
       
-      <!-- Workflow Control Buttons -->
+      <!-- Workflow Action Buttons -->
       <button class="btn-review" id="btn-send-review-handover">Send for Review</button>
-      <button class="btn-submit" id="btn-submit-handover" style="display:none;">Submit Handover</button>
+      <button class="btn-sendback" id="btn-send-back-handover" style="display:none;">Send back to open</button>
+      <button class="btn-submit" id="btn-submit-handover" style="display:none;">Approve &amp; Submit</button>
       <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
       <span class="locked-note" id="locked-note" style="display:none;"></span>
       <button type="button" class="list-row-delete" id="btn-delete-handover" style="display:none;">Delete handover</button>
@@ -407,6 +413,12 @@
     <p id="no-venue-note" style="display:none; color:var(--vv-gray-mid); font-size:14px; margin:0 0 24px;">
       Pick a venue above to create or continue its handover.
     </p>
+
+    <!-- Reviewer Comments Block -->
+    <section class="attachments-card reviewer-card" id="reviewer-card" style="display:none;">
+      <div class="field-label" style="color:#856404;"><span class="dash" style="color:#856404;">—</span>Reviewer Comments</div>
+      <textarea id="f-reviewer-comments" style="min-height:90px;" placeholder="Add feedback or changes required before submitting this handover..."></textarea>
+    </section>
 
     <fieldset id="handover-fieldset">
       <section class="ship-card">
@@ -499,9 +511,6 @@
 (function(){
   "use strict";
 
-  // ---------------------------------------------------------------
-  // Field schema — single source of truth, mirrors the hosted app
-  // ---------------------------------------------------------------
   var SECTIONS = [
     { num:"01", title:"Operational Overview", fields:[
       {id:"opoverview", label:"Current Operational Overview"},
@@ -546,8 +555,10 @@
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
   var ADMIN_KEY = "vv-admin-mode";
+  var REVIEWER_AUTH_KEY = "vv-reviewer-auth";
 
   var ADMIN_PASSWORD = "handover2026";
+  var REVIEWER_PASSWORD = "handover2026!";
 
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -592,6 +603,7 @@
       incoming: row.incoming || "",
       date: row.handover_date || "",
       fields: Object.assign(emptyFields(), row.fields || {}),
+      reviewerComments: row.reviewer_comments || "",
       status: row.status || "draft",
       submittedAt: row.submitted_at || null,
       deletedAt: row.deleted_at || null,
@@ -608,6 +620,7 @@
       incoming: rec.incoming || "",
       handover_date: rec.date || "",
       fields: rec.fields || emptyFields(),
+      reviewer_comments: rec.reviewerComments || "",
       status: rec.status || "draft",
       submitted_at: rec.submittedAt || null,
       deleted_at: rec.deletedAt || null,
@@ -679,7 +692,7 @@
     return out;
   }
   function emptyRecord(){
-    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
+    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), reviewerComments:"", status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
   }
 
   function formatDateDisplay(isoDate){
@@ -697,6 +710,12 @@
   }
   function writeAdmin(on){
     try{ localStorage.setItem(ADMIN_KEY, on ? "on" : "off"); }catch(e){}
+  }
+  function readReviewerAuth(){
+    try{ return sessionStorage.getItem(REVIEWER_AUTH_KEY) === "true"; }catch(e){ return false; }
+  }
+  function writeReviewerAuth(ok){
+    try{ sessionStorage.setItem(REVIEWER_AUTH_KEY, ok ? "true" : "false"); }catch(e){}
   }
 
   var toastTimer = null;
@@ -740,9 +759,6 @@
   }
   window.addEventListener("hashchange", route);
 
-  // ---------------------------------------------------------------
-  // HOME
-  // ---------------------------------------------------------------
   function renderHome(){
     var banner = document.getElementById("home-local-banner");
     if (banner) banner.style.display = SUPABASE_CONFIGURED ? "none" : "block";
@@ -781,7 +797,17 @@
   });
 
   document.getElementById("btn-review-list").addEventListener("click", function(){
-    window.location.hash = "submitted?filter=in_review";
+    if (!readReviewerAuth()) {
+      var pass = window.prompt("Enter Reviewer Password:");
+      if (pass === REVIEWER_PASSWORD) {
+        writeReviewerAuth(true);
+        window.location.hash = "submitted?filter=in_review";
+      } else if (pass !== null) {
+        window.alert("Incorrect reviewer password.");
+      }
+    } else {
+      window.location.hash = "submitted?filter=in_review";
+    }
   });
 
   document.getElementById("btn-submitted").addEventListener("click", function(){
@@ -947,6 +973,7 @@
     document.getElementById("f-outgoing").value = rec.outgoing || "";
     document.getElementById("f-incoming").value = rec.incoming || "";
     document.getElementById("f-date").value = rec.date || "";
+    document.getElementById("f-reviewer-comments").value = rec.reviewerComments || "";
     document.getElementById("footer-date").textContent = formatDateDisplay(rec.date) || "—";
     document.getElementById("handover-title").textContent = shipValue || "Venue Handover";
 
@@ -965,23 +992,31 @@
     badge.textContent = statusText;
     badge.className = "status-badge " + (rec.status || "draft");
 
+    var reviewerCard = document.getElementById("reviewer-card");
+    reviewerCard.style.display = (rec.status === "in_review" || rec.status === "submitted" || rec.reviewerComments) ? "block" : "none";
+    document.getElementById("f-reviewer-comments").disabled = locked;
+
     var sendReviewBtn = document.getElementById("btn-send-review-handover");
+    var sendBackBtn = document.getElementById("btn-send-back-handover");
     var submitBtn = document.getElementById("btn-submit-handover");
     var reopenBtn = document.getElementById("btn-reopen-handover");
     var lockedNote = document.getElementById("locked-note");
 
     if (rec.status === "draft") {
       sendReviewBtn.style.display = "inline-block";
+      sendBackBtn.style.display = "none";
       submitBtn.style.display = "none";
       reopenBtn.style.display = "none";
       lockedNote.style.display = "none";
     } else if (rec.status === "in_review") {
       sendReviewBtn.style.display = "none";
+      sendBackBtn.style.display = "inline-block";
       submitBtn.style.display = "inline-block";
       reopenBtn.style.display = admin ? "inline-block" : "none";
       lockedNote.style.display = "none";
     } else if (rec.status === "submitted") {
       sendReviewBtn.style.display = "none";
+      sendBackBtn.style.display = "none";
       submitBtn.style.display = "none";
       if (admin){
         reopenBtn.style.display = "inline-block";
@@ -1357,7 +1392,9 @@
       updateVenueToggleLabel("");
       document.getElementById("handover-title").textContent = "Venue Handover";
       document.getElementById("handover-status-badge").style.display = "none";
+      document.getElementById("reviewer-card").style.display = "none";
       document.getElementById("btn-send-review-handover").style.display = "none";
+      document.getElementById("btn-send-back-handover").style.display = "none";
       document.getElementById("btn-submit-handover").style.display = "none";
       document.getElementById("btn-reopen-handover").style.display = "none";
       document.getElementById("locked-note").style.display = "none";
@@ -1426,6 +1463,7 @@
       outgoing: document.getElementById("f-outgoing").value,
       incoming: document.getElementById("f-incoming").value,
       date: document.getElementById("f-date").value,
+      reviewerComments: document.getElementById("f-reviewer-comments").value,
       fields: fields
     };
   }
@@ -1470,6 +1508,7 @@
   }
 
   document.getElementById("handover-fieldset").addEventListener("input", scheduleSave);
+  document.getElementById("f-reviewer-comments").addEventListener("input", scheduleSave);
 
   document.getElementById("file-input").addEventListener("change", function(){
     persistCurrent();
@@ -1477,6 +1516,11 @@
 
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "in_review" });
+    renderHandover(currentVenueKey);
+  });
+
+  document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
+    await persistCurrent({ status: "draft" });
     renderHandover(currentVenueKey);
   });
 
@@ -1531,7 +1575,7 @@
       : showingDraft
       ? "Open Handovers"
       : showingReview
-      ? "Handovers In Review"
+      ? "Handovers In Review 🔒"
       : "Submitted Handovers";
 
     document.getElementById("submitted-subtitle").textContent = showingAll
