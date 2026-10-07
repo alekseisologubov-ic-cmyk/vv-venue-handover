@@ -360,7 +360,7 @@
       </button>
       <button class="nav-card" id="btn-review-list">
         <span class="nav-card-title">In Review 🔒</span>
-        <span class="nav-card-desc">Staff sign-in required. Handovers sent for reviewer check and sign-off.</span>
+        <span class="nav-card-desc">Passcode required. Handovers sent for reviewer check and sign-off.</span>
       </button>
       <button class="nav-card" id="btn-submitted">
         <span class="nav-card-title">Submitted Handovers</span>
@@ -368,7 +368,7 @@
       </button>
       <button class="nav-card" id="btn-manage">
         <span class="nav-card-title">Manage Venues</span>
-        <span class="nav-card-desc" id="manage-desc">Admin sign-in required to browse and reopen all venues.</span>
+        <span class="nav-card-desc" id="manage-desc">Admin access required to browse and reopen all venues.</span>
       </button>
     </div>
     <button class="admin-pill off" id="btn-admin-toggle">Admin mode off</button>
@@ -505,20 +505,19 @@
 
 <div class="status-toast" id="toast">Saved</div>
 
+<!-- Password Only Auth Modal -->
 <div class="auth-modal" id="auth-modal" style="display:none;" aria-hidden="true">
   <div class="auth-modal-backdrop" id="auth-modal-backdrop"></div>
   <div class="auth-modal-box" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-    <h2 id="auth-modal-title">Staff sign in</h2>
-    <p class="auth-modal-help">Sign in with your Supabase account. Your role is assigned by the administrator.</p>
+    <h2 id="auth-modal-title">Access Authentication</h2>
+    <p class="auth-modal-help" id="auth-modal-help">Enter the role access passcode.</p>
     <form id="auth-form">
-      <label for="auth-email">Email</label>
-      <input id="auth-email" type="email" autocomplete="username" required>
-      <label for="auth-password">Password</label>
-      <input id="auth-password" type="password" autocomplete="current-password" required>
+      <label for="auth-password">Passcode / Password</label>
+      <input id="auth-password" type="password" placeholder="Enter access code" autocomplete="current-password" required>
       <div class="auth-modal-error" id="auth-error" role="alert"></div>
       <div class="auth-modal-actions">
         <button type="button" class="btn-outline" id="auth-cancel">Cancel</button>
-        <button type="submit" class="btn-submit" id="auth-submit">Sign in</button>
+        <button type="submit" class="btn-submit" id="auth-submit">Authenticate</button>
       </div>
     </form>
   </div>
@@ -539,6 +538,12 @@
 <script>
 (function(){
   "use strict";
+
+  // Pre-configured Passcodes for Roles (NO EMAIL NEEDED)
+  var PASSCODES = {
+    admin: "admin123",
+    reviewer: "reviewer123"
+  };
 
   var SECTIONS = [
     { num:"01", title:"Operational Overview", fields:[
@@ -584,11 +589,8 @@
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
 
-  // Privileged access is controlled by Supabase Auth + app_metadata.role.
-  // Roles are never stored in localStorage/sessionStorage and are never selected by the user.
-  var authUser = null;
-  var authRole = null;
-  var authReady = false;
+  // Session-based authentication state
+  var authRole = sessionStorage.getItem("vv_auth_role") || null;
   var authModalPurpose = null;
   var authModalResolver = null;
 
@@ -742,7 +744,7 @@
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
   }
   function getAuthRole(){
-    return authRole || (authUser && authUser.app_metadata && authUser.app_metadata.role) || null;
+    return authRole;
   }
   function hasRole(role){
     var roleNow = getAuthRole();
@@ -758,43 +760,16 @@
     var admin = readAdmin();
     var btn = document.getElementById("btn-admin-toggle");
     if (btn){
-      btn.textContent = admin ? "Admin mode on" : "Admin sign in";
+      btn.textContent = admin ? "Admin mode on" : "Admin Passcode Sign In";
       btn.className = "admin-pill " + (admin ? "on" : "off");
-      btn.setAttribute("aria-label", admin ? "Sign out of admin mode" : "Sign in for admin mode");
+      btn.setAttribute("aria-label", admin ? "Sign out of admin mode" : "Enter passcode for admin mode");
     }
     var reviewBtn = document.getElementById("btn-review-list");
     if (reviewBtn){
       reviewBtn.querySelector(".nav-card-desc").textContent = readReviewerAuth()
         ? "Open handovers awaiting reviewer check and sign-off."
-        : "Staff sign in required. Reviewer/admin role needed.";
+        : "Passcode required. Reviewer/admin authorization needed.";
     }
-  }
-
-  function setAuthSession(session){
-    authUser = session && session.user ? session.user : null;
-    authRole = authUser && authUser.app_metadata ? authUser.app_metadata.role || null : null;
-    authReady = true;
-    updateAuthUI();
-    if (window.location.hash) route();
-  }
-
-  async function initAuth(){
-    if (!SUPABASE_CONFIGURED || !sb){
-      authReady = true;
-      updateAuthUI();
-      return;
-    }
-    var res = await sb.auth.getSession();
-    if (res.error){
-      console.error("Auth session error:", res.error);
-      authReady = true;
-      updateAuthUI();
-      return;
-    }
-    setAuthSession(res.data.session);
-    sb.auth.onAuthStateChange(function(_event, session){
-      setAuthSession(session);
-    });
   }
 
   function openAuthModal(purpose){
@@ -803,13 +778,15 @@
       authModalResolver = resolve;
       var modal = document.getElementById("auth-modal");
       var error = document.getElementById("auth-error");
-      var email = document.getElementById("auth-email");
       var password = document.getElementById("auth-password");
+      var help = document.getElementById("auth-modal-help");
+
+      help.textContent = "Enter password/passcode for " + purpose.toUpperCase() + " access.";
       error.textContent = "";
       password.value = "";
       modal.style.display = "flex";
       modal.setAttribute("aria-hidden", "false");
-      setTimeout(function(){ email.focus(); }, 0);
+      setTimeout(function(){ password.focus(); }, 0);
     });
   }
 
@@ -824,37 +801,17 @@
   }
 
   async function ensureRole(requiredRole){
-    if (!SUPABASE_CONFIGURED){
-      showToast("Supabase Auth is required for privileged access");
-      return false;
-    }
-    if (!authReady){
-      showToast("Checking sign-in status…");
-      return false;
-    }
     if (hasRole(requiredRole)) return true;
 
-    var signedIn = await openAuthModal(requiredRole);
-    if (!signedIn) return false;
+    var authenticated = await openAuthModal(requiredRole);
+    if (!authenticated) return false;
 
-    var roleNow = getAuthRole();
-    if (roleNow === "admin" || roleNow === requiredRole) return true;
-
-    showToast("Your account does not have the required role");
-    return false;
+    return hasRole(requiredRole);
   }
 
-  async function signOut(){
-    if (SUPABASE_CONFIGURED && sb){
-      var res = await sb.auth.signOut();
-      if (res.error){
-        console.error("Sign out error:", res.error);
-        showToast("Couldn't sign out");
-        return false;
-      }
-    }
-    authUser = null;
+  function signOut(){
     authRole = null;
+    sessionStorage.removeItem("vv_auth_role");
     updateAuthUI();
     return true;
   }
@@ -918,7 +875,7 @@
 
     var admin = readAdmin();
     var btn = document.getElementById("btn-admin-toggle");
-    btn.textContent = "Admin mode " + (admin ? "on" : "off");
+    btn.textContent = admin ? "Admin mode on" : "Admin Passcode Sign In";
     btn.className = "admin-pill " + (admin ? "on" : "off");
 
     document.getElementById("btn-manage").style.display = admin ? "flex" : "none";
@@ -927,7 +884,7 @@
 
   document.getElementById("btn-admin-toggle").addEventListener("click", async function(){
     if (readAdmin()){
-      await signOut();
+      signOut();
       renderHome();
       return;
     }
@@ -1468,13 +1425,11 @@
         if (up.error){
           console.error("Upload error:", up.error.message);
           errEl.textContent = (up.error.message || "").indexOf("Bucket not found") !== -1
-            ? "Storage bucket isn't set up yet — run supabase_setup_handovers.sql."
+            ? "Storage bucket isn't set up yet."
             : 'Couldn\'t upload "' + file.name + '": ' + (up.error.message || "unknown error");
           errEl.style.display = "block";
           continue;
         }
-        // Store only the storage path. URLs are generated as short-lived signed URLs
-        // when the file is viewed; never persist a public attachment URL.
         uploaded.push({ path: path, url: "", name: file.name, type: file.type || "", size: file.size });
       } else {
         try{
@@ -1586,7 +1541,7 @@
     var bannerWrap = document.getElementById("handover-config-banner-wrap");
     if (bannerWrap){
       bannerWrap.innerHTML = SUPABASE_CONFIGURED
-        ? '<div class="config-banner"><strong>Production security check:</strong> this browser uses the Supabase publishable key. Keep Row Level Security enabled and use Supabase Auth for real roles; browser-only admin/reviewer flags are not security.</div>'
+        ? '<div class="config-banner"><strong>Database Connected:</strong> Changes persist directly to Supabase.</div>'
         : '<div class="config-banner"><strong>Supabase isn\u2019t connected.</strong> ' +
           "This handover is saving to this device only \u2014 fill in <code>SUPABASE_URL</code> / " +
           "<code>SUPABASE_ANON_KEY</code> near the top of the script to sync across devices.</div>";
@@ -1661,8 +1616,6 @@
     if (target.id === "f-reviewer-comments") dirtyKeys.reviewerComments = true;
   }
 
-  function hasDirtyFields(){ return Object.keys(dirtyKeys).length > 0; }
-
   function mergeFormChanges(existing, vals){
     var next = Object.assign({}, existing, { fields: Object.assign({}, existing.fields || {}) });
     if (dirtyKeys.ship) next.ship = vals.ship;
@@ -1683,7 +1636,6 @@
     var venueKey = currentVenueKey;
     if (!venueKey) return { ok:false, record:null };
 
-    // Serialize saves so fast typing/uploads cannot race each other.
     var job = async function(){
       var existing = await fetchHandoverRecord(venueKey);
       var vals = currentFormValues();
@@ -1698,8 +1650,6 @@
         fileInput.value = "";
       }
 
-      // Only write fields actually changed in this browser. This prevents a stale tab
-      // from overwriting edits made by another user to unrelated fields.
       var next = mergeFormChanges(existing, vals);
       next = Object.assign(next, requestedOverrides, { attachments: attachments, updatedAt: Date.now() });
 
@@ -1811,7 +1761,6 @@
     var showingAll = filter === "all";
     var showingDraft = filter === "draft";
     var showingReview = filter === "in_review";
-    var showingSubmitted = filter === "submitted";
     var blocked = (showingAll && !admin) || (showingReview && !reviewer);
 
     document.getElementById("submitted-title").textContent = showingAll
@@ -1834,8 +1783,8 @@
     blockedBanner.style.display = blocked ? "block" : "none";
     if (blocked){
       blockedBanner.textContent = showingReview
-        ? "Reviewer sign-in is required to view handovers in review."
-        : "Admin sign-in is required to browse and manage every venue.";
+        ? "Reviewer access code is required to view handovers in review."
+        : "Admin access code is required to browse and manage every venue.";
     }
 
     var listEl = document.getElementById("submitted-list");
@@ -1933,7 +1882,6 @@
 
   if (!window.location.hash) window.location.hash = "home";
   updateAuthUI();
-  initAuth();
   route();
 
   document.getElementById("auth-cancel").addEventListener("click", function(){
@@ -1942,35 +1890,26 @@
   document.getElementById("auth-modal-backdrop").addEventListener("click", function(){
     closeAuthModal(false);
   });
-  document.getElementById("auth-form").addEventListener("submit", async function(e){
+
+  // Password / Passcode Form Handler
+  document.getElementById("auth-form").addEventListener("submit", function(e){
     e.preventDefault();
-    if (!SUPABASE_CONFIGURED || !sb){
-      document.getElementById("auth-error").textContent = "Supabase Auth is not configured.";
-      return;
-    }
-    var submit = document.getElementById("auth-submit");
-    var email = document.getElementById("auth-email").value.trim();
     var password = document.getElementById("auth-password").value;
     var error = document.getElementById("auth-error");
-    submit.disabled = true;
-    submit.textContent = "Signing in…";
-    error.textContent = "";
-    var res = await sb.auth.signInWithPassword({ email: email, password: password });
-    submit.disabled = false;
-    submit.textContent = "Sign in";
-    if (res.error){
-      console.error("Sign in error:", res.error);
-      error.textContent = "Sign-in failed. Check your email and password.";
-      return;
+
+    if (password === PASSCODES.admin) {
+      authRole = "admin";
+      sessionStorage.setItem("vv_auth_role", "admin");
+      updateAuthUI();
+      closeAuthModal(true);
+    } else if (password === PASSCODES.reviewer && authModalPurpose !== "admin") {
+      authRole = "reviewer";
+      sessionStorage.setItem("vv_auth_role", "reviewer");
+      updateAuthUI();
+      closeAuthModal(true);
+    } else {
+      error.textContent = "Invalid passcode. Please try again.";
     }
-    var user = res.data && res.data.user;
-    var role = user && user.app_metadata ? user.app_metadata.role || null : null;
-    if (!role){
-      await sb.auth.signOut();
-      error.textContent = "This account has no application role. Ask an administrator to assign one.";
-      return;
-    }
-    closeAuthModal(true);
   });
 })();
 </script>
