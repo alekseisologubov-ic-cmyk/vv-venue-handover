@@ -170,8 +170,11 @@
     display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px;
   }
   .ship-field label{ display:block; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; font-size:11px; color:var(--vv-squid-ink); margin-bottom:6px; }
-  .ship-field input{ width:100%; border:none; border-bottom:2px solid #E3D8EA; background:transparent; font-size:15px; padding:4px 2px 6px; font-family:inherit; color:inherit; }
-  .ship-field input:focus{ outline:none; border-bottom-color:var(--vv-red); }
+  .ship-field input, .ship-field select{ width:100%; border:none; border-bottom:2px solid #E3D8EA; background:transparent; font-size:15px; padding:4px 2px 6px; font-family:inherit; color:inherit; }
+  .ship-field input:focus, .ship-field select:focus{ outline:none; border-bottom-color:var(--vv-red); }
+  .ship-field-group{ display:flex; gap:8px; }
+  .ship-field-group input{ flex:1; }
+  .ship-field-group select{ flex:1; }
 
   /* ---- attachments (photos & files) ---- */
   .attachments-card{
@@ -254,7 +257,7 @@
   .field-attach-btn:hover{ background:#EFE5F4; }
   .field-attach-btn.busy{ opacity:0.5; pointer-events:none; }
   fieldset{ border:none; padding:0; margin:0; }
-  fieldset:disabled textarea, fieldset:disabled input{ background:#F2EFF4; color:#8a8a8a; }
+  fieldset:disabled textarea, fieldset:disabled input, fieldset:disabled select{ background:#F2EFF4; color:#8a8a8a; }
 
   .callout{ color:#fff; border-radius:10px; padding:20px 22px; margin:28px 0; }
   .callout .eyebrow2{ font-weight:700;letter-spacing:0.08em;text-transform:uppercase;font-size:12px;color:#FFBABA;margin-bottom:8px; }
@@ -361,7 +364,7 @@
     .card, .ship-card, .attachments-card { box-shadow: none !important; border: 1px solid #ccc !important; page-break-inside: avoid; }
     textarea { border: none !important; background: transparent !important; resize: none !important; padding: 0 !important; font-size: 13px !important; }
     textarea::placeholder { color: transparent !important; }
-    input { border: none !important; background: transparent !important; }
+    input, select { border: none !important; background: transparent !important; -webkit-appearance: none; appearance: none; }
     .callout { background: #333 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 
@@ -464,8 +467,24 @@
     <fieldset id="handover-fieldset">
       <section class="ship-card">
         <div class="ship-field"><label>Lady Ship / Venue</label><input id="f-ship" placeholder="Enter ship and venue name"></div>
-        <div class="ship-field"><label>Outgoing Chef (Name / Position)</label><input id="f-outgoing" placeholder="—"></div>
-        <div class="ship-field"><label>Incoming Chef (Name / Position)</label><input id="f-incoming" placeholder="—"></div>
+        <div class="ship-field">
+          <label>Outgoing Chef (Name / Position)</label>
+          <div class="ship-field-group">
+            <input id="f-outgoing-name" placeholder="Name">
+            <select id="f-outgoing-pos">
+              <option value="">Select position...</option>
+            </select>
+          </div>
+        </div>
+        <div class="ship-field">
+          <label>Incoming Chef (Name / Position)</label>
+          <div class="ship-field-group">
+            <input id="f-incoming-name" placeholder="Name">
+            <select id="f-incoming-pos">
+              <option value="">Select position...</option>
+            </select>
+          </div>
+        </div>
         <div class="ship-field"><label>Date</label><input type="date" id="f-date"></div>
       </section>
 
@@ -614,6 +633,18 @@
     "The Kitchen Table", "The Manor"
   ];
 
+  var CULINARY_LEADERSHIP_POSITIONS = [
+    "Sr Executive Chef",
+    "Executive Chef",
+    "Executive Sous Chef",
+    "Culinary Admin"
+  ];
+
+  var STANDARD_VENUE_POSITIONS = [
+    "Chef de Cuisine (CDC)",
+    "Sous Chef"
+  ];
+
   var SUPABASE_URL = "https://mnkbdmvqgyarpzvdmvkx.supabase.co";
   var SUPABASE_ANON_KEY = "sb_publishable_Y_nB0YkFiBjCFdGPFNoLXA_snSGq8N8";
 
@@ -637,11 +668,26 @@
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }catch(e){}
   }
 
+  function parseChefString(str){
+    if(!str) return { name: "", pos: "" };
+    var parts = str.split(" / ");
+    if(parts.length > 1){
+      return { name: parts[0], pos: parts.slice(1).join(" / ") };
+    }
+    return { name: str, pos: "" };
+  }
+
   function rowToRecord(row){
+    var outParsed = parseChefString(row.outgoing);
+    var inParsed = parseChefString(row.incoming);
     return {
       ship: row.ship || "",
       outgoing: row.outgoing || "",
+      outgoingName: row.outgoing_name || outParsed.name,
+      outgoingPos: row.outgoing_pos || outParsed.pos,
       incoming: row.incoming || "",
+      incomingName: row.incoming_name || inParsed.name,
+      incomingPos: row.incoming_pos || inParsed.pos,
       date: row.handover_date || "",
       fields: Object.assign(emptyFields(), row.fields || {}),
       reviewerComments: row.reviewer_comments || (row.fields && row.fields._reviewerComments) || "",
@@ -656,11 +702,14 @@
 
   function recordToRow(venueKey, rec){
     var fieldsWithReviewer = Object.assign({}, rec.fields || emptyFields(), { _reviewerComments: rec.reviewerComments || "" });
+    var outCombined = rec.outgoingName ? (rec.outgoingName + (rec.outgoingPos ? " / " + rec.outgoingPos : "")) : (rec.outgoing || "");
+    var inCombined = rec.incomingName ? (rec.incomingName + (rec.incomingPos ? " / " + rec.incomingPos : "")) : (rec.incoming || "");
+
     return {
       id: venueKey,
       ship: rec.ship || "",
-      outgoing: rec.outgoing || "",
-      incoming: rec.incoming || "",
+      outgoing: outCombined,
+      incoming: inCombined,
       handover_date: rec.date || "",
       fields: fieldsWithReviewer,
       reviewer_comments: rec.reviewerComments || "",
@@ -680,7 +729,7 @@
       return res.data ? rowToRecord(res.data) : emptyRecord();
     }
     var all = localLoadAll();
-    return all[venueKey] || emptyRecord();
+    return all[venueKey] ? rowToRecord(all[venueKey]) : emptyRecord();
   }
 
   async function saveRecord(venueKey, rec){
@@ -734,7 +783,7 @@
     }
     var all = localLoadAll();
     return Object.keys(all)
-      .map(function(k){ var rec = Object.assign({}, all[k]); rec.venueKey = k; return rec; })
+      .map(function(k){ var rec = rowToRecord(all[k]); rec.venueKey = k; return rec; })
       .filter(function(r){ return !statusFilter || r.status === statusFilter; })
       .filter(function(r){ return includeDeleted || !r.deletedAt; })
       .sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
@@ -746,7 +795,7 @@
     return out;
   }
   function emptyRecord(){
-    return { ship:"", outgoing:"", incoming:"", date:"", fields:emptyFields(), reviewerComments:"", status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
+    return { ship:"", outgoing:"", outgoingName:"", outgoingPos:"", incoming:"", incomingName:"", incomingPos:"", date:"", fields:emptyFields(), reviewerComments:"", status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
   }
 
   function formatDateDisplay(isoDate){
@@ -1016,9 +1065,30 @@
     toggle.textContent = display || "Select venue(s)…";
   }
 
-  // Grows a textarea to fit all of its content, no internal scrollbar — so a
-  // long comment is fully visible both on screen and in the printed/PDF view,
-  // instead of being clipped inside a fixed-height box.
+  function populatePositionDropdowns(venueKey){
+    var stationLabels = venueKeyToStationLabels(venueKey);
+    var isCulinaryLeadership = stationLabels.indexOf("Culinary Leadership") !== -1;
+    var positions = isCulinaryLeadership ? CULINARY_LEADERSHIP_POSITIONS : STANDARD_VENUE_POSITIONS;
+
+    var outSelect = document.getElementById("f-outgoing-pos");
+    var inSelect = document.getElementById("f-incoming-pos");
+
+    var currentOutVal = outSelect.value;
+    var currentInVal = inSelect.value;
+
+    var html = '<option value="">Select position...</option>';
+    positions.forEach(function(pos){
+      html += '<option value="' + escapeHtml(pos) + '">' + escapeHtml(pos) + '</option>';
+    });
+
+    outSelect.innerHTML = html;
+    inSelect.innerHTML = html;
+
+    outSelect.value = currentOutVal;
+    inSelect.value = currentInVal;
+  }
+
+  // Grows a textarea to fit all of its content, no internal scrollbar
   function autoGrowTextarea(el){
     if (!el) return;
     el.style.height = "auto";
@@ -1031,13 +1101,16 @@
 
   function applyRecordToForm(venueKey, rec){
     updateVenueToggleLabel(venueKey);
+    populatePositionDropdowns(venueKey);
 
     var joinedLabel = venueKeyDisplay(venueKey);
     var shipValue = rec.ship || joinedLabel;
 
     document.getElementById("f-ship").value = shipValue;
-    document.getElementById("f-outgoing").value = rec.outgoing || "";
-    document.getElementById("f-incoming").value = rec.incoming || "";
+    document.getElementById("f-outgoing-name").value = rec.outgoingName || "";
+    document.getElementById("f-outgoing-pos").value = rec.outgoingPos || "";
+    document.getElementById("f-incoming-name").value = rec.incomingName || "";
+    document.getElementById("f-incoming-pos").value = rec.incomingPos || "";
     document.getElementById("f-date").value = rec.date || "";
     document.getElementById("f-reviewer-comments").value = rec.reviewerComments || "";
     document.getElementById("footer-date").textContent = formatDateDisplay(rec.date) || "—";
@@ -1049,9 +1122,6 @@
     });
 
     var admin = readAdmin();
-    // The reviewer password only means something if it actually gates
-    // editing/acting on the handover itself, not just the list page you
-    // found it from.
     var reviewerOk = admin || readReviewerAuth();
     var locked = (rec.status === "submitted" && !admin) || (rec.status === "in_review" && !reviewerOk);
     document.getElementById("handover-fieldset").disabled = locked;
@@ -1064,8 +1134,6 @@
 
     var reviewerCard = document.getElementById("reviewer-card");
     reviewerCard.style.display = (rec.status === "in_review" || rec.status === "submitted" || rec.reviewerComments) ? "block" : "none";
-    // Only the reviewer (or admin) can actually type in it, and only while
-    // it's genuinely in review — everyone else just sees what's there.
     document.getElementById("f-reviewer-comments").disabled = !(rec.status === "in_review" && reviewerOk);
 
     var pdfBtn = document.getElementById("btn-pdf-export");
@@ -1085,7 +1153,6 @@
       lockedNote.style.display = "none";
     } else if (rec.status === "in_review") {
       sendReviewBtn.style.display = "none";
-      // reviewerOk was already computed above, alongside `locked`.
       sendBackBtn.style.display = reviewerOk ? "inline-block" : "none";
       submitBtn.style.display = reviewerOk ? "inline-block" : "none";
       reopenBtn.style.display = admin ? "inline-block" : "none";
@@ -1125,8 +1192,6 @@
       el.style.display = locked ? "none" : "flex";
     });
 
-    // Every field just got (re)populated above — size each box to fit its
-    // full content now, not just as the person types later.
     autoGrowAllTextareas();
   }
 
@@ -1544,10 +1609,23 @@
     document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
       fields[ta.getAttribute("data-field-id")] = ta.value;
     });
+
+    var outName = document.getElementById("f-outgoing-name").value;
+    var outPos = document.getElementById("f-outgoing-pos").value;
+    var inName = document.getElementById("f-incoming-name").value;
+    var inPos = document.getElementById("f-incoming-pos").value;
+
+    var outCombined = outName ? (outName + (outPos ? " / " + outPos : "")) : "";
+    var inCombined = inName ? (inName + (inPos ? " / " + inPos : "")) : "";
+
     return {
       ship: document.getElementById("f-ship").value,
-      outgoing: document.getElementById("f-outgoing").value,
-      incoming: document.getElementById("f-incoming").value,
+      outgoing: outCombined,
+      outgoingName: outName,
+      outgoingPos: outPos,
+      incoming: inCombined,
+      incomingName: inName,
+      incomingPos: inPos,
       date: document.getElementById("f-date").value,
       reviewerComments: document.getElementById("f-reviewer-comments").value,
       fields: fields
@@ -1596,6 +1674,9 @@
     if (e.target && e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
     scheduleSave();
   });
+  document.getElementById("handover-fieldset").addEventListener("change", function(e){
+    if (e.target && e.target.tagName === "SELECT") scheduleSave();
+  });
   document.getElementById("f-reviewer-comments").addEventListener("input", function(e){
     autoGrowTextarea(e.target);
     scheduleSave();
@@ -1610,32 +1691,29 @@
     window.print();
   });
 
-  // Only the report moves between folders — the person acting on it stays in
-  // their own queue (the one they were just working from), rather than being
-  // dragged along to wherever the report ends up next.
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "in_review" });
     showToast("Sent for review");
-    window.location.hash = "submitted?filter=draft"; // back to Open Handovers
+    window.location.hash = "submitted?filter=draft";
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft" });
     showToast("Sent back to open");
-    window.location.hash = "submitted?filter=in_review"; // stay in the reviewer's queue
+    window.location.hash = "submitted?filter=in_review";
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
     var now = new Date().toISOString();
     await persistCurrent({ status: "submitted", submittedAt: now });
     showToast("Approved and submitted");
-    window.location.hash = "submitted?filter=in_review"; // stay in the reviewer's queue
+    window.location.hash = "submitted?filter=in_review";
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
     await persistCurrent({ status: "draft", submittedAt: null });
     showToast("Reopened as draft");
-    window.location.hash = "submitted?filter=all"; // back to the admin's Manage Venues view
+    window.location.hash = "submitted?filter=all";
   });
 
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
