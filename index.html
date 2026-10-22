@@ -563,6 +563,8 @@
       </div>
 
       <div id="sections-bottom"></div>
+      <!-- Hidden legacy field preserves any previously saved Treat Yourself 2 text without showing a duplicate card. -->
+      <textarea data-field-id="treatyourself2" aria-hidden="true" tabindex="-1" style="display:none !important;"></textarea>
     </fieldset>
   </main>
   <footer class="band stripe-black">
@@ -619,8 +621,7 @@
       {id:"upcomingevents", label:"Upcoming Events / High Volume Sailings"} ]},
     { num:"02", title:"Financial Operations", fields:[
       {id:"foodcost", label:"Food Cost"},
-      {id:"treat", label:"Treat Yourself 1"},
-      {id:"treatyourself2", label:"Treat Yourself 2"},
+      {id:"treat", label:"Treat Yourself"},
       {id:"overtime", label:"Overtime"} ]},
     { num:"03", title:"Manning & Structure", fields:[
       {id:"manning", label:"Current Team Manning"},
