@@ -1365,86 +1365,70 @@
     var newTabLink = document.getElementById("attachment-modal-newtab");
 
     if (!a) return;
+    // Show the modal immediately. Only request a short-lived URL after the user clicks.
+    nameEl.textContent = a.name || "Attachment";
+    newTabLink.href = "#";
+    newTabLink.style.pointerEvents = "none";
+    body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Preparing secure preview…</span>';
+    modal.style.display = "flex";
+    revokeCurrentObjectUrl();
+
     var secureUrl = a.url || "";
     if (SUPABASE_CONFIGURED && a.path) {
-      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 60);
-      if (signed.error) { window.alert("You do not have permission to open this attachment, or the file is unavailable."); return; }
-      secureUrl = signed.data.signedUrl;
+      try {
+        var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 300);
+        if (signed.error || !signed.data || !signed.data.signedUrl) {
+          body.innerHTML = '<div class="attachment-modal-unsupported">Could not open this file. Check your access permissions and storage path, then try again.</div>';
+          return;
+        }
+        secureUrl = signed.data.signedUrl;
+      } catch (err) {
+        console.error("Signed attachment URL error", err);
+        body.innerHTML = '<div class="attachment-modal-unsupported">Could not connect to secure file storage. Please try again.</div>';
+        return;
+      }
     }
-    if (!secureUrl) { window.alert("This attachment has no accessible file URL. Re-upload it after private storage is configured."); return; }
+    if (!secureUrl) {
+      body.innerHTML = '<div class="attachment-modal-unsupported">This attachment has no accessible file URL. The saved attachment record may need its storage path restored.</div>';
+      return;
+    }
     a = Object.assign({}, a, {url:secureUrl});
-    nameEl.textContent = a.name || "Attachment";
     newTabLink.href = a.url;
-    revokeCurrentObjectUrl();
-    body.innerHTML = '<span style="color:var(--vv-gray-mid); font-size:13px;">Loading preview…</span>';
-    modal.style.display = "flex";
+    newTabLink.style.pointerEvents = "auto";
 
     var type = (a.type || "").toLowerCase();
     var fileName = (a.name || "").toLowerCase();
-
-    var isImg = type.indexOf("image/") === 0 || fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    var isImg = type.indexOf("image/") === 0 || /\.(jpg|jpeg|png|gif|webp|bmp|heic|heif)$/i.test(fileName);
     var isPdf = type === "application/pdf" || fileName.endsWith(".pdf");
-    var isOffice = fileName.match(/\.(doc|docx|xls|xlsx|ppt|pptx)$/i);
+    var isOffice = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(fileName);
     var isCsv = fileName.endsWith(".csv") || type === "text/csv";
 
-    if (isImg){
-      var src = a.url;
-      try {
-        var res = await fetch(a.url);
-        var blob = await res.blob();
-        src = URL.createObjectURL(blob);
-        currentObjectUrl = src;
-      } catch(e) {}
+    if (isImg) {
       body.innerHTML = "";
       var img = document.createElement("img");
-      img.src = src;
       img.alt = a.name || "";
+      img.onload = function(){ body.dataset.loading = "false"; };
+      img.onerror = function(){ body.innerHTML = '<div class="attachment-modal-unsupported">Image could not be loaded. Try “Open in new tab” to check the file.</div>'; };
+      img.src = a.url; // Direct signed URL: avoid downloading the entire image into a Blob first.
       body.appendChild(img);
       return;
     }
 
-    if (isPdf){
-      var pdfSrc = a.url;
-      try {
-        var resPdf = await fetch(a.url);
-        var blobPdf = await resPdf.blob();
-        pdfSrc = URL.createObjectURL(blobPdf);
-        currentObjectUrl = pdfSrc;
-      } catch(e) {}
+    if (isPdf) {
       body.innerHTML = "";
       var iframe = document.createElement("iframe");
-      iframe.src = pdfSrc;
+      iframe.title = a.name || "PDF preview";
+      iframe.src = a.url; // Let the browser PDF viewer stream the file directly.
       body.appendChild(iframe);
       return;
     }
 
-    if (isOffice){
-      if (a.url && a.url.indexOf("http") === 0 && a.url.indexOf("data:") !== 0){
-        body.innerHTML = "";
-        var officeNote = document.createElement("div");
-        officeNote.className = "attachment-modal-unsupported";
-        officeNote.textContent = "Office previews are not sent to external preview services. Use Open in new tab to open or download this file.";
-        body.appendChild(officeNote);
-        return;
-      } else {
-        try {
-          var base64Data = a.url.split(",")[1];
-          var binaryStr = atob(base64Data);
-          var printableText = binaryStr.replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s+/g, " ");
-          
-          body.innerHTML = "";
-          var container = document.createElement("div");
-          container.style.cssText = "width:100%; max-height:70vh; overflow:auto; text-align:left; padding:15px; background:#fafafa; border:1px solid #E3D8EA; font-family:serif; line-height:1.6; font-size:14px; color:#333;";
-          container.innerHTML = "<strong style='display:block; margin-bottom:10px; color:var(--vv-squid-ink); font-family:sans-serif;'>" + escapeHtml(a.name) + " (Text Preview)</strong>" + escapeHtml(printableText.substring(0, 5000));
-          body.appendChild(container);
-          return;
-        } catch(err) {
-          console.error("Local Office file parse error", err);
-        }
-      }
+    if (isOffice && a.url.indexOf("http") === 0) {
+      body.innerHTML = '<div class="attachment-modal-unsupported">Office previews are not sent to external preview services. Use “Open in new tab” to open or download this file.</div>';
+      return;
     }
 
-    if (isCsv){
+    if (isCsv) {
       try {
         var textContent = "";
         if (a.url.indexOf("data:") === 0) {
@@ -1452,15 +1436,14 @@
           textContent = decodeURIComponent(escape(atob(base64Str)));
         } else {
           var resCsv = await fetch(a.url);
+          if (!resCsv.ok) throw new Error("HTTP " + resCsv.status);
           textContent = await resCsv.text();
         }
-
         var lines = textContent.trim().split(/\r\n|\n/);
         if (lines.length > 0) {
           var tableHtml = '<div style="width:100%; max-height:70vh; overflow:auto;"><table class="doc-preview-table">';
           lines.forEach(function(line, rowIdx){
-            var cells = line.split(",");
-            tableHtml += '<tr>';
+            var cells = line.split(","); tableHtml += '<tr>';
             cells.forEach(function(cell){
               var tag = rowIdx === 0 ? 'th' : 'td';
               tableHtml += '<' + tag + '>' + escapeHtml(cell.replace(/^"|"$/g, '')) + '</' + tag + '>';
@@ -1471,16 +1454,10 @@
           body.innerHTML = tableHtml;
           return;
         }
-      } catch(e) {
-        console.error("CSV parse error", e);
-      }
+      } catch(e) { console.error("CSV parse error", e); }
     }
 
-    var msg = document.createElement("div");
-    msg.className = "attachment-modal-unsupported";
-    msg.textContent = "This file type can't be previewed here — use \"Open in new tab\" above.";
-    body.innerHTML = "";
-    body.appendChild(msg);
+    body.innerHTML = '<div class="attachment-modal-unsupported">Preview is not available for this file type. Use “Open in new tab” to open or download it.</div>';
   }
 
   function closeAttachmentModal(){
