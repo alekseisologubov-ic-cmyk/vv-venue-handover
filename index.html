@@ -660,11 +660,9 @@
       {id:"guestscores", label:"Guest Satisfaction Scores"},
       {id:"improvement", label:"Improvement Areas"} ]},
     { num:"10", title:"Upcoming & Planning", fields:[
-      {id:"hours", label:"Operating Hours (Sea Days / Port Days)"},
       {id:"focusareas", label:"Operational Focus Areas"},
       {id:"bimini", label:"Special Events, Charters, Holidays & Celebrations"},
-      {id:"ktmatrix", label:"KT Matrix"},
-      {id:"ktsupportspecialevents", label:"Support / KT Special Events"} ]}
+      {id:"ktmatrix", label:"KT Matrix / Support & KT Special Events"} ]}
   ];
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
@@ -1208,6 +1206,15 @@
     document.getElementById("footer-date").textContent = formatDateDisplay(rec.date) || "—";
     document.getElementById("handover-title").textContent = shipValue || "Venue Handover";
 
+    // Compatibility: combine the former separate KT fields into one card and
+    // carry forward their attachments. Remove Operating Hours from the UI only;
+    // any historic value remains in the saved record.
+    rec.fields = Object.assign({}, rec.fields || {});
+    var legacyKTText = rec.fields.ktsupportspecialevents || "";
+    if (legacyKTText && !rec.fields.ktmatrix) rec.fields.ktmatrix = legacyKTText;
+    else if (legacyKTText && rec.fields.ktmatrix && rec.fields.ktmatrix.indexOf(legacyKTText) === -1) {
+      rec.fields.ktmatrix += "\n\n--- Support / KT Special Events (previous entry) ---\n" + legacyKTText;
+    }
     document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
       var id = ta.getAttribute("data-field-id");
       ta.value = (rec.fields && rec.fields[id]) || "";
@@ -1276,7 +1283,12 @@
     currentAttachments = rec.attachments || [];
     renderFileListUI(currentAttachments, locked);
 
-    currentFieldAttachments = rec.fieldAttachments || {};
+    currentFieldAttachments = Object.assign({}, rec.fieldAttachments || {});
+    var legacyKTAttachments = currentFieldAttachments.ktsupportspecialevents || [];
+    if (legacyKTAttachments.length) {
+      currentFieldAttachments.ktmatrix = (currentFieldAttachments.ktmatrix || []).concat(legacyKTAttachments);
+      currentFieldAttachments.ktsupportspecialevents = [];
+    }
     document.querySelectorAll(".field-attach-chips").forEach(function(el){
       renderFieldAttachmentChips(el.getAttribute("data-attach-list"), locked);
     });
