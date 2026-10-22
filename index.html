@@ -326,6 +326,22 @@
   }
   .status-toast.show{opacity:0.92;}
 
+  /* Secure sign-in gate and compact attachment rows */
+  .auth-gate{position:fixed;inset:0;z-index:2000;background:var(--vv-bg);display:flex;align-items:center;justify-content:center;padding:24px;}
+  .auth-panel{width:min(440px,100%);background:#fff;border-radius:14px;padding:28px;box-shadow:0 12px 40px rgba(20,10,30,.18);border-top:4px solid var(--vv-red);}
+  .auth-panel h2{margin:0 0 8px;color:var(--vv-squid-ink);font-size:24px;}
+  .auth-panel p{color:var(--vv-gray-mid);font-size:14px;line-height:1.5;}
+  .auth-panel label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;margin:14px 0 6px;color:var(--vv-squid-ink);}
+  .auth-panel input{width:100%;padding:11px 12px;border:1px solid #D9CBE2;border-radius:7px;font:inherit;}
+  .auth-panel button{width:100%;margin-top:16px;border:0;border-radius:7px;padding:12px;background:var(--vv-red);color:#fff;font-weight:800;cursor:pointer;}
+  .auth-error{color:var(--vv-red-deep)!important;min-height:18px;}
+  .signout-btn{position:fixed;right:16px;top:16px;z-index:1500;border:1px solid #D9CBE2;border-radius:20px;background:#fff;color:var(--vv-squid-ink);padding:8px 13px;font-weight:700;cursor:pointer;display:none;}
+  body.authenticated .signout-btn{display:block;}
+  body:not(.authenticated) > [data-view]{display:none!important;}
+  .attachment-row,.field-attach-chip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .attachment-file-icon{width:34px;height:34px;border-radius:6px;background:#EFE8F2;display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;font-size:17px;}
+  .attachment-row a,.field-attach-chip a{overflow-wrap:anywhere;}
+  .attachment-row img,.field-attach-chip img{display:none!important;}
   [data-view]{ display:none; }
   [data-view].active{ display:block; }
 
@@ -372,6 +388,20 @@
 </style>
 </head>
 <body>
+
+<button class="signout-btn" id="signout-btn" type="button">Sign out</button>
+<!-- Individual sign-in; authorization is enforced by Supabase RLS, not this UI. -->
+<div class="auth-gate" id="auth-gate">
+  <form class="auth-panel" id="auth-form">
+    <div class="eyebrow" style="color:var(--vv-red-deep);">— VIRGIN VOYAGES</div>
+    <h2>Venue Handover</h2>
+    <p>Sign in with your company account. Access depends on the role assigned to your account.</p>
+    <label for="auth-email">Email</label><input id="auth-email" type="email" autocomplete="username" required>
+    <label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" required>
+    <button type="submit" id="auth-submit">Sign in</button>
+    <p class="auth-error" id="auth-error" role="alert"></p>
+  </form>
+</div>
 
 <!-- ============ HOME ============ -->
 <div data-view="home">
@@ -614,11 +644,9 @@
   ];
 
   var STORAGE_KEY = "vv-venue-handovers-v1";
-  var ADMIN_KEY = "vv-admin-mode";
-  var REVIEWER_AUTH_KEY = "vv-reviewer-auth";
-
-  var ADMIN_PASSWORD = "handover2026";
-  var REVIEWER_PASSWORD = "handover2026!";
+  var currentUser = null;
+  var currentRole = null;
+  var currentAssignments = [];
 
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -728,8 +756,7 @@
       if (res.error){ console.error(res.error); return emptyRecord(); }
       return res.data ? rowToRecord(res.data) : emptyRecord();
     }
-    var all = localLoadAll();
-    return all[venueKey] ? rowToRecord(all[venueKey]) : emptyRecord();
+    return emptyRecord();
   }
 
   async function saveRecord(venueKey, rec){
@@ -749,10 +776,8 @@
       }
       return true;
     }
-    var all = localLoadAll();
-    all[venueKey] = rec;
-    localSaveAll(all);
-    return true;
+    console.error("Secure cloud storage is required; local-only save is disabled.");
+    return false;
   }
 
   async function softDeleteRecord(venueKey){
@@ -781,12 +806,7 @@
         return rec;
       });
     }
-    var all = localLoadAll();
-    return Object.keys(all)
-      .map(function(k){ var rec = rowToRecord(all[k]); rec.venueKey = k; return rec; })
-      .filter(function(r){ return !statusFilter || r.status === statusFilter; })
-      .filter(function(r){ return includeDeleted || !r.deletedAt; })
-      .sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
+    return [];
   }
 
   function emptyFields(){
@@ -808,18 +828,79 @@
   function slugify(input){
     return (input || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || ("venue-" + Date.now());
   }
-  function readAdmin(){
-    try{ return localStorage.getItem(ADMIN_KEY) === "on"; }catch(e){ return false; }
+  // UI convenience only. Supabase RLS remains the actual security boundary.
+  function readAdmin(){ return currentRole === "admin"; }
+  function writeAdmin(on){ /* Admin access comes only from the server-assigned role. */ }
+  function readReviewerAuth(){ return currentRole === "shore_reviewer" || currentRole === "admin"; }
+  function writeReviewerAuth(ok){ /* Reviewer access comes only from the server-assigned role. */ }
+
+  async function loadCurrentRole(user){
+    if (!user) { currentRole = null; currentAssignments = []; return false; }
+    var result = await sb.from("user_roles").select("role,ship_slug,station_slug").eq("user_id", user.id);
+    if (result.error) throw result.error;
+    currentAssignments = result.data || [];
+    var roles = currentAssignments.map(function(x){ return x.role; });
+    currentRole = roles.indexOf("admin") >= 0 ? "admin" : (roles.indexOf("shore_reviewer") >= 0 ? "shore_reviewer" : (roles.indexOf("ship_user") >= 0 ? "ship_user" : null));
+    if (!currentRole) throw new Error("Your account is signed in but has no assigned Venue Handover role. Contact an administrator.");
+    return true;
   }
-  function writeAdmin(on){
-    try{ localStorage.setItem(ADMIN_KEY, on ? "on" : "off"); }catch(e){}
+
+  function setAuthenticatedUI(on){
+    document.body.classList.toggle("authenticated", !!on);
+    document.getElementById("auth-gate").style.display = on ? "none" : "flex";
+    if (on) {
+      document.getElementById("btn-admin-toggle").style.display = currentRole === "admin" ? "inline-block" : "none";
+      document.getElementById("btn-admin-toggle").textContent = currentRole === "admin" ? "Admin access active" : "Role access";
+      document.getElementById("btn-manage").style.display = currentRole === "admin" ? "flex" : "none";
+    }
   }
-  function readReviewerAuth(){
-    try{ return sessionStorage.getItem(REVIEWER_AUTH_KEY) === "true"; }catch(e){ return false; }
+
+  async function initializeAuthentication(){
+    if (!SUPABASE_CONFIGURED || !sb) {
+      document.getElementById("auth-error").textContent = "Supabase is not configured. Sign-in is required; local-only mode is disabled.";
+      document.getElementById("auth-submit").disabled = true;
+      return;
+    }
+    var sessionResult = await sb.auth.getSession();
+    if (sessionResult.error) throw sessionResult.error;
+    if (sessionResult.data.session) {
+      currentUser = sessionResult.data.session.user;
+      await loadCurrentRole(currentUser);
+      setAuthenticatedUI(true);
+      route();
+    }
+    sb.auth.onAuthStateChange(function(event, session){
+      if (event === "SIGNED_OUT" || !session) {
+        currentUser = null; currentRole = null; currentAssignments = [];
+        setAuthenticatedUI(false);
+      }
+    });
   }
-  function writeReviewerAuth(ok){
-    try{ sessionStorage.setItem(REVIEWER_AUTH_KEY, ok ? "true" : "false"); }catch(e){}
-  }
+
+  document.getElementById("signout-btn").addEventListener("click", async function(){
+    await sb.auth.signOut();
+    window.location.hash = "home";
+    setAuthenticatedUI(false);
+  });
+
+  document.getElementById("auth-form").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var errorEl = document.getElementById("auth-error");
+    var submit = document.getElementById("auth-submit");
+    errorEl.textContent = ""; submit.disabled = true; submit.textContent = "Signing in…";
+    try {
+      var auth = await sb.auth.signInWithPassword({email:document.getElementById("auth-email").value.trim(),password:document.getElementById("auth-password").value});
+      if (auth.error) throw auth.error;
+      currentUser = auth.data.user;
+      await loadCurrentRole(currentUser);
+      setAuthenticatedUI(true);
+      route();
+    } catch(err) {
+      if (currentUser) await sb.auth.signOut();
+      currentUser = null; currentRole = null; currentAssignments = [];
+      errorEl.textContent = err.message || "Sign-in failed.";
+    } finally { submit.disabled = false; submit.textContent = "Sign in"; }
+  });
 
   var toastTimer = null;
   function showToast(text){
@@ -875,19 +956,7 @@
   }
 
   document.getElementById("btn-admin-toggle").addEventListener("click", function(){
-    if (readAdmin()){
-      writeAdmin(false);
-      renderHome();
-      return;
-    }
-    var entered = window.prompt("Enter the admin password:");
-    if (entered === null) return;
-    if (entered !== ADMIN_PASSWORD){
-      window.alert("Incorrect password.");
-      return;
-    }
-    writeAdmin(true);
-    renderHome();
+    if (readAdmin()) window.location.hash = "submitted?filter=all";
   });
 
   document.getElementById("btn-create").addEventListener("click", function(){
@@ -899,17 +968,8 @@
   });
 
   document.getElementById("btn-review-list").addEventListener("click", function(){
-    if (!readReviewerAuth()) {
-      var pass = window.prompt("Enter Reviewer Password:");
-      if (pass === REVIEWER_PASSWORD) {
-        writeReviewerAuth(true);
-        window.location.hash = "submitted?filter=in_review";
-      } else if (pass !== null) {
-        window.alert("Incorrect reviewer password.");
-      }
-    } else {
-      window.location.hash = "submitted?filter=in_review";
-    }
+    if (readReviewerAuth()) window.location.hash = "submitted?filter=in_review";
+    else window.alert("Your account does not have shore reviewer permissions.");
   });
 
   document.getElementById("btn-submitted").addEventListener("click", function(){
@@ -1207,9 +1267,7 @@
       var removeLink = locked ? "" :
         ' <button type="button" class="field-attach-chip-remove" data-attach-field="' + fieldId + '" data-attach-idx="' + idx + '">×</button>';
       
-      var imgPreview = isImg
-        ? '<a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '"><img src="' + a.url + '" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #E3D8EA; vertical-align:middle; display:inline-block;"></a> '
-        : '';
+      var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
 
       return '<div class="field-attach-chip">' + imgPreview + '📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
     }).join("");
@@ -1287,6 +1345,15 @@
     var nameEl = document.getElementById("attachment-modal-name");
     var newTabLink = document.getElementById("attachment-modal-newtab");
 
+    if (!a) return;
+    var secureUrl = a.url || "";
+    if (SUPABASE_CONFIGURED && a.path) {
+      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 60);
+      if (signed.error) { window.alert("You do not have permission to open this attachment, or the file is unavailable."); return; }
+      secureUrl = signed.data.signedUrl;
+    }
+    if (!secureUrl) { window.alert("This attachment has no accessible file URL. Re-upload it after private storage is configured."); return; }
+    a = Object.assign({}, a, {url:secureUrl});
     nameEl.textContent = a.name || "Attachment";
     newTabLink.href = a.url;
     revokeCurrentObjectUrl();
@@ -1335,9 +1402,10 @@
     if (isOffice){
       if (a.url && a.url.indexOf("http") === 0 && a.url.indexOf("data:") !== 0){
         body.innerHTML = "";
-        var officeIframe = document.createElement("iframe");
-        officeIframe.src = "https://view.officeapps.live.com/op/embed.aspx?src=" + encodeURIComponent(a.url);
-        body.appendChild(officeIframe);
+        var officeNote = document.createElement("div");
+        officeNote.className = "attachment-modal-unsupported";
+        officeNote.textContent = "Office previews are not sent to external preview services. Use Open in new tab to open or download this file.";
+        body.appendChild(officeNote);
         return;
       } else {
         try {
@@ -1449,8 +1517,7 @@
           errEl.style.display = "block";
           continue;
         }
-        var pub = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
-        uploaded.push({ path: path, url: (pub.data && pub.data.publicUrl) || "", name: file.name, type: file.type || "", size: file.size });
+        uploaded.push({ path: path, url: "", name: file.name, type: file.type || "", size: file.size });
       } else {
         try{
           var dataUrl = await fileToDataUrl(file);
@@ -1483,9 +1550,7 @@
       var sizeTxt = formatBytes(f.size);
       var removeLink = locked ? "" : ' · <a href="#" data-remove-idx="' + idx + '" class="attachment-remove-link">remove</a>';
       
-      var imgPreview = isImg
-        ? '<a href="#" data-open-main="' + idx + '"><img src="' + f.url + '" style="width:40px; height:40px; object-fit:cover; border-radius:4px; border:1px solid #E3D8EA; vertical-align:middle; margin-right:6px;"></a>'
-        : '';
+      var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
 
       return '<div class="attachment-row">' + imgPreview + '📎 <a href="#" data-open-main="' + idx + '">' + escapeHtml(f.name) + '</a>' +
         (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '</div>';
@@ -1852,7 +1917,11 @@
   });
 
   if (!window.location.hash) window.location.hash = "home";
-  route();
+  // Do not render protected views until Supabase Auth and the role assignment are loaded.
+  initializeAuthentication().catch(function(err){
+    document.getElementById("auth-error").textContent = err.message || "Could not initialize secure sign-in.";
+    setAuthenticatedUI(false);
+  });
 })();
 </script>
 
