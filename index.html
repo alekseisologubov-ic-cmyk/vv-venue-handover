@@ -579,6 +579,7 @@
     <div class="config-banner" id="submitted-blocked-banner" style="display:none;">
       Admin mode is off, so draft venues are hidden here. Turn on admin mode from the home screen to browse everything.
     </div>
+    <div id="bulk-delete-tools" style="display:none;max-width:1100px;margin:0 auto 18px;padding:0 8px;text-align:right;"><button type="button" id="bulk-delete-deleted" class="report-card-secondary" style="border-color:#b00020;color:#b00020;">Permanently delete all deleted handovers</button></div>
     <div class="report-list" id="submitted-list"></div>
   </main>
 </div>
@@ -790,6 +791,14 @@
     var rec = await fetchHandoverRecord(venueKey);
     rec.deletedAt = null;
     await saveRecord(venueKey, rec);
+    return true;
+  }
+
+  // Hard deletion is deliberately limited to records already soft-deleted by an admin.
+  async function permanentlyDeleteRecord(venueKey){
+    if (!SUPABASE_CONFIGURED) throw new Error("Secure cloud storage is required.");
+    var result = await sb.from("handovers").delete().eq("id", venueKey).not("deleted_at", "is", null);
+    if (result.error) throw result.error;
     return true;
   }
 
@@ -1842,6 +1851,29 @@
     var statusFilter = showingAll ? null : filter;
     var rows = await listRecords(statusFilter, showingAll);
     listEl.innerHTML = "";
+    var bulkTools = document.getElementById("bulk-delete-tools");
+    var bulkDeleteBtn = document.getElementById("bulk-delete-deleted");
+    var deletedRows = rows.filter(function(item){ return !!item.deletedAt; });
+    bulkTools.style.display = (showingAll && admin && deletedRows.length) ? "block" : "none";
+    bulkDeleteBtn.onclick = async function(){
+      if (!readAdmin()) return;
+      var confirmation = window.prompt("This permanently deletes " + deletedRows.length + " already-deleted handover(s). This cannot be undone. Type DELETE ALL to continue.");
+      if (confirmation !== "DELETE ALL") return;
+      bulkDeleteBtn.disabled = true;
+      bulkDeleteBtn.textContent = "Deleting…";
+      try {
+        for (var i = 0; i < deletedRows.length; i++) {
+          await permanentlyDeleteRecord(deletedRows[i].venueKey);
+        }
+        await renderSubmitted(filter);
+      } catch (err) {
+        window.alert("Could not delete all records. Some may already have been deleted. Details: " + (err.message || err));
+        await renderSubmitted(filter);
+      } finally {
+        bulkDeleteBtn.disabled = false;
+        bulkDeleteBtn.textContent = "Permanently delete all deleted handovers";
+      }
+    };
 
     if (rows.length === 0){
       listEl.innerHTML = '<p class="list-empty">Nothing here yet.</p>';
@@ -1870,7 +1902,7 @@
         '<div class="report-card-badge-row"><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></div>' +
         '<button type="button" class="report-card-primary">' + primaryLabel + '</button>' +
         (admin ? (isDeleted
-          ? '<button type="button" class="report-card-secondary restore">Restore Report</button>'
+          ? '<button type="button" class="report-card-secondary restore">Restore Report</button><button type="button" class="report-card-secondary permanently-delete" style="border-color:#b00020;color:#b00020;">Permanently Delete</button>'
           : '<button type="button" class="report-card-secondary">Delete Report</button>') : '');
 
       function goToCard(){ window.location.hash = "handover?v=" + encodeURIComponent(r.venueKey); }
@@ -1888,8 +1920,18 @@
             e.stopPropagation();
             restoreBtn.disabled = true;
             restoreBtn.textContent = "Restoring…";
-            await restoreRecord(r.venueKey);
-            renderSubmitted(filter);
+            try { await restoreRecord(r.venueKey); await renderSubmitted(filter); }
+            catch (err) { window.alert("Could not restore handover: " + (err.message || err)); restoreBtn.disabled = false; restoreBtn.textContent = "Restore Report"; }
+          });
+          var permanentBtn = card.querySelector(".report-card-secondary.permanently-delete");
+          permanentBtn.addEventListener("click", async function(e){
+            e.stopPropagation();
+            if (!readAdmin()) return;
+            if (!window.confirm('Permanently delete "' + label + '"? This cannot be undone.')) return;
+            permanentBtn.disabled = true;
+            permanentBtn.textContent = "Deleting…";
+            try { await permanentlyDeleteRecord(r.venueKey); await renderSubmitted(filter); }
+            catch (err) { window.alert("Could not permanently delete handover: " + (err.message || err)); permanentBtn.disabled = false; permanentBtn.textContent = "Permanently Delete"; }
           });
         } else {
           var delBtn = card.querySelector(".report-card-secondary");
