@@ -166,8 +166,18 @@
   /* ---- ship info card ---- */
   .ship-card{
     background:var(--vv-white); border-top:3px solid var(--vv-red); border-radius:10px;
-    padding:18px 20px; margin-bottom:22px; box-shadow:0 2px 10px rgba(60,16,83,0.08);
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px;
+    padding:20px 24px; margin-bottom:22px; box-shadow:0 2px 10px rgba(60,16,83,0.08);
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px 24px; align-items:start;
+  }
+  .ship-field.ship-field-top{ grid-column:1 / -1; }
+  .ship-field.ship-field-date{ grid-column:1 / -1; max-width:420px; }
+  .ship-field-group{ display:grid; grid-template-columns:minmax(0,2fr) minmax(150px,1fr); gap:16px; }
+  .ship-field-group input,.ship-field-group select{ min-width:0; }
+  .ship-field input,.ship-field select{ min-height:36px; }
+  @media(max-width:700px){
+    .ship-card{grid-template-columns:minmax(0,1fr);padding:16px;gap:18px;}
+    .ship-field.ship-field-top,.ship-field.ship-field-date{grid-column:1;max-width:none;}
+    .ship-field-group{grid-template-columns:minmax(0,1fr);gap:10px;}
   }
   .ship-field label{ display:block; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; font-size:11px; color:var(--vv-squid-ink); margin-bottom:6px; }
   .ship-field input, .ship-field select{ width:100%; border:none; border-bottom:2px solid #E3D8EA; background:transparent; font-size:15px; padding:4px 2px 6px; font-family:inherit; color:inherit; }
@@ -496,9 +506,9 @@
 
     <fieldset id="handover-fieldset">
       <section class="ship-card">
-        <div class="ship-field"><label>Lady Ship / Venue</label><input id="f-ship" placeholder="Enter ship and venue name"></div>
+        <div class="ship-field ship-field-top"><label>Ship / Venue</label><input id="f-ship" placeholder="Enter ship name and venue"></div>
         <div class="ship-field">
-          <label>Outgoing Chef (Name / Position)</label>
+          <label>Outgoing Chef</label>
           <div class="ship-field-group">
             <input id="f-outgoing-name" placeholder="Name">
             <select id="f-outgoing-pos">
@@ -507,7 +517,7 @@
           </div>
         </div>
         <div class="ship-field">
-          <label>Incoming Chef (Name / Position)</label>
+          <label>Incoming Chef</label>
           <div class="ship-field-group">
             <input id="f-incoming-name" placeholder="Name">
             <select id="f-incoming-pos">
@@ -515,7 +525,7 @@
             </select>
           </div>
         </div>
-        <div class="ship-field"><label>Date</label><input type="date" id="f-date"></div>
+        <div class="ship-field ship-field-date"><label>Handover Date</label><input type="date" id="f-date"></div>
       </section>
 
       <section class="attachments-card">
