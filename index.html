@@ -400,15 +400,16 @@
 <body>
 
 <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
-<!-- Individual sign-in; authorization is enforced by Supabase RLS, not this UI. -->
+<!-- Company-domain self-registration/sign-in; server-side trigger and RLS enforce access. -->
 <div class="auth-gate" id="auth-gate">
   <form class="auth-panel" id="auth-form">
     <div class="eyebrow" style="color:var(--vv-red-deep);">— VIRGIN VOYAGES</div>
     <h2>Venue Handover</h2>
-    <p>Sign in with your company account. Access depends on the role assigned to your account.</p>
+    <p>Use your Virgin Voyages email address. Anyone with an <strong>@virginvoyages.com</strong> address can create an account and access ship handovers.</p>
     <label for="auth-email">Email</label><input id="auth-email" type="email" autocomplete="username" required>
-    <label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" required>
+    <label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" minlength="8" required>
     <button type="submit" id="auth-submit">Sign in</button>
+    <button type="button" id="auth-mode-toggle" style="margin-top:8px;background:transparent;color:var(--vv-squid-ink);border:1px solid var(--vv-squid-ink);">Create company account</button>
     <p class="auth-error" id="auth-error" role="alert"></p>
   </form>
 </div>
@@ -913,23 +914,46 @@
     setAuthenticatedUI(false);
   });
 
+  var authMode = "signin";
+  document.getElementById("auth-mode-toggle").addEventListener("click", function(){
+    authMode = authMode === "signin" ? "signup" : "signin";
+    document.getElementById("auth-submit").textContent = authMode === "signup" ? "Create account" : "Sign in";
+    document.getElementById("auth-mode-toggle").textContent = authMode === "signup" ? "Already have an account? Sign in" : "Create company account";
+    document.getElementById("auth-password").setAttribute("autocomplete", authMode === "signup" ? "new-password" : "current-password");
+    document.getElementById("auth-error").textContent = "";
+  });
+
   document.getElementById("auth-form").addEventListener("submit", async function(e){
     e.preventDefault();
     var errorEl = document.getElementById("auth-error");
     var submit = document.getElementById("auth-submit");
-    errorEl.textContent = ""; submit.disabled = true; submit.textContent = "Signing in…";
+    var email = document.getElementById("auth-email").value.trim().toLowerCase();
+    var password = document.getElementById("auth-password").value;
+    errorEl.textContent = ""; submit.disabled = true; submit.textContent = authMode === "signup" ? "Creating account…" : "Signing in…";
     try {
-      var auth = await sb.auth.signInWithPassword({email:document.getElementById("auth-email").value.trim(),password:document.getElementById("auth-password").value});
-      if (auth.error) throw auth.error;
-      currentUser = auth.data.user;
-      await loadCurrentRole(currentUser);
-      setAuthenticatedUI(true);
-      route();
+      if (!email.endsWith("@virginvoyages.com")) throw new Error("Use your @virginvoyages.com email address.");
+      if (authMode === "signup") {
+        var created = await sb.auth.signUp({email:email,password:password,options:{emailRedirectTo:window.location.origin}});
+        if (created.error) throw created.error;
+        if (created.data.session && created.data.user) {
+          currentUser = created.data.user;
+          await loadCurrentRole(currentUser);
+          setAuthenticatedUI(true); route();
+        } else {
+          errorEl.textContent = "Account created. Check your Virgin Voyages email to confirm it, then return here and sign in. Access is limited to @virginvoyages.com addresses.";
+        }
+      } else {
+        var auth = await sb.auth.signInWithPassword({email:email,password:password});
+        if (auth.error) throw auth.error;
+        currentUser = auth.data.user;
+        await loadCurrentRole(currentUser);
+        setAuthenticatedUI(true); route();
+      }
     } catch(err) {
       if (currentUser) await sb.auth.signOut();
       currentUser = null; currentRole = null; currentAssignments = [];
-      errorEl.textContent = err.message || "Sign-in failed.";
-    } finally { submit.disabled = false; submit.textContent = "Sign in"; }
+      errorEl.textContent = err.message || (authMode === "signup" ? "Account creation failed." : "Sign-in failed.");
+    } finally { submit.disabled = false; submit.textContent = authMode === "signup" ? "Create account" : "Sign in"; }
   });
 
   var toastTimer = null;
