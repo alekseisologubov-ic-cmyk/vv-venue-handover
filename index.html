@@ -930,8 +930,14 @@
     var submit = document.getElementById("auth-submit");
     errorEl.textContent = ""; submit.disabled = true; submit.textContent = "Continuing…";
     try {
-      var email = document.getElementById("auth-email").value.trim().toLowerCase();
-      if (!/^[^\s@]+@virginvoyages\.com$/.test(email)) throw new Error("Use your @virginvoyages.com email address.");
+      var email = document.getElementById("auth-email").value
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim()
+        .toLowerCase();
+      var emailParts = email.split("@");
+      if (emailParts.length !== 2 || !emailParts[0] || emailParts[1] !== "virginvoyages.com") {
+        throw new Error("Only Virgin Voyages email addresses are allowed. Please use name@virginvoyages.com.");
+      }
       var existing = await sb.auth.getSession();
       if (existing.data.session) await sb.auth.signOut();
       var auth = await sb.auth.signInAnonymously();
