@@ -403,22 +403,14 @@
 <body>
 
 <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
-<!-- Email-only company-domain entry; this does not verify ownership of the email address. -->
+<!-- Individual sign-in; authorization is enforced by Supabase RLS, not this UI. -->
 <div class="auth-gate" id="auth-gate">
   <form class="auth-panel" id="auth-form">
     <div class="eyebrow" style="color:var(--vv-red-deep);">— VIRGIN VOYAGES</div>
     <h2>Venue Handover</h2>
     <p>Enter your Virgin Voyages email address to continue. No personal password or confirmation email is required.</p>
     <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="email" placeholder="name@virginvoyages.com" required>
-    <button type="submit" id="auth-submit">Continue with Company Email</button>
-    <div style="border-top:1px solid #eadfea;margin-top:22px;padding-top:16px;">
-      <button type="button" id="admin-login-toggle" style="background:#3b155f;margin-top:0;">Admin Login</button>
-      <div id="admin-login-panel" style="display:none;margin-top:10px;">
-        <label for="admin-password">Admin password</label>
-        <input id="admin-password" type="password" autocomplete="current-password" placeholder="Enter admin password">
-        <button type="button" id="admin-login-submit" style="background:#3b155f;">Sign in as Admin</button>
-      </div>
-    </div>
+    <button type="submit" id="auth-submit">Continue</button>
     <p class="auth-error" id="auth-error" role="alert"></p>
   </form>
 </div>
@@ -885,38 +877,16 @@
   function readReviewerAuth(){ return currentRole === "shore_reviewer" || currentRole === "admin"; }
   function writeReviewerAuth(ok){ /* Reviewer access comes only from the server-assigned role. */ }
 
-  // Fail clearly instead of leaving the sign-in screen stuck forever.
-  function withTimeout(promise, label, ms){
-    var timeoutId;
-    var timeout = new Promise(function(_, reject){
-      timeoutId = setTimeout(function(){ reject(new Error(label + " timed out after " + Math.round(ms/1000) + " seconds. Check Supabase status, Auth settings, and the vh-access Edge Function logs.")); }, ms);
-    });
-    return Promise.race([promise, timeout]).finally(function(){ clearTimeout(timeoutId); });
-  }
-
   async function callAccessFunction(mode, email, password){
-    var sessionResult = await withTimeout(sb.auth.getSession(), "Checking the sign-in session", 15000);
-    if (sessionResult.error) throw sessionResult.error;
-    var session = sessionResult.data && sessionResult.data.session;
+    var session = (await sb.auth.getSession()).data.session;
     if (!session) throw new Error("Session not ready. Please try again.");
-
-    var controller = new AbortController();
-    var timer = setTimeout(function(){ controller.abort(); }, 15000);
-    var response;
-    try {
-      response = await fetch(SUPABASE_URL + "/functions/v1/vh-access", {
-        method:"POST",
-        headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
-        body:JSON.stringify({mode:mode, email:email || "", password:password || ""}),
-        signal:controller.signal
-      });
-    } catch (err) {
-      if (err && err.name === "AbortError") throw new Error("The vh-access server did not respond within 15 seconds. Check Supabase Edge Function logs and deployment.");
-      throw err;
-    } finally { clearTimeout(timer); }
-
-    var payload = await withTimeout(response.json().catch(function(){ return {}; }), "Reading the access response", 10000);
-    if (!response.ok) throw new Error(payload.error || ("Access request failed (HTTP " + response.status + ")."));
+    var response = await fetch(SUPABASE_URL + "/functions/v1/vh-access", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
+      body:JSON.stringify({mode:mode, email:email || "", password:password || ""})
+    });
+    var payload = await response.json().catch(function(){ return {}; });
+    if (!response.ok) throw new Error(payload.error || "Access request failed.");
     return payload;
   }
 
@@ -974,7 +944,6 @@
     var submit = document.getElementById("auth-submit");
     errorEl.textContent = ""; submit.disabled = true; submit.textContent = "Continuing…";
     try {
-      if (!SUPABASE_CONFIGURED || !sb) throw new Error("Supabase is not configured. Check the project URL and publishable key in the script.");
       // Normalize pasted addresses (spaces, non-breaking spaces and invisible characters).
       var email = String(document.getElementById("auth-email").value || "")
         .normalize("NFKC")
@@ -987,14 +956,13 @@
         throw new Error("Email check failed. Enter your address ending exactly in @virginvoyages.com.");
       }
       email = emailMatch[1] + "@" + emailDomain;
-      var existing = await withTimeout(sb.auth.getSession(), "Checking the sign-in session", 15000);
-      if (existing.error) throw existing.error;
-      if (existing.data.session) await withTimeout(sb.auth.signOut(), "Clearing the previous session", 15000);
-      var auth = await withTimeout(sb.auth.signInAnonymously(), "Creating the sign-in session", 15000);
+      var existing = await sb.auth.getSession();
+      if (existing.data.session) await sb.auth.signOut();
+      var auth = await sb.auth.signInAnonymously();
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
       await callAccessFunction("identify", email, "");
-      await withTimeout(loadCurrentRole(currentUser), "Loading your access role", 15000);
+      await loadCurrentRole(currentUser);
       setAuthenticatedUI(true);
       route();
     } catch(err) {
@@ -1002,41 +970,7 @@
       currentUser = null; currentRole = null; currentAssignments = [];
       console.error("Venue Handover sign-in failed:", err);
       errorEl.textContent = (err && err.message) ? err.message : "Could not continue. Check the browser console for details.";
-    } finally { submit.disabled = false; submit.textContent = "Continue with Company Email"; }
-  });
-
-  // Admin access is granted only by the server after validating VH_ADMIN_PASSWORD.
-  document.getElementById("admin-login-toggle").addEventListener("click", function(){
-    var panel = document.getElementById("admin-login-panel");
-    panel.style.display = panel.style.display === "none" ? "block" : "none";
-    if (panel.style.display === "block") document.getElementById("admin-password").focus();
-  });
-  document.getElementById("admin-login-submit").addEventListener("click", async function(){
-    var errorEl = document.getElementById("auth-error");
-    var btn = document.getElementById("admin-login-submit");
-    var password = document.getElementById("admin-password").value;
-    errorEl.textContent = "";
-    if (!password) { errorEl.textContent = "Enter the admin password."; return; }
-    btn.disabled = true; btn.textContent = "Verifying…";
-    try {
-      if (!SUPABASE_CONFIGURED || !sb) throw new Error("Supabase is not configured.");
-      var existing = await sb.auth.getSession();
-      if (existing.data.session) await sb.auth.signOut();
-      var auth = await sb.auth.signInAnonymously();
-      if (auth.error) throw auth.error;
-      currentUser = auth.data.user;
-      await callAccessFunction("admin", "", password);
-      await loadCurrentRole(currentUser);
-      if (currentRole !== "admin") throw new Error("Admin role was not assigned. Check the Supabase Edge Function.");
-      document.getElementById("admin-password").value = "";
-      setAuthenticatedUI(true);
-      route();
-    } catch (err) {
-      if (sb) { try { await sb.auth.signOut(); } catch (_) {} }
-      currentUser = null; currentRole = null; currentAssignments = [];
-      console.error("Venue Handover admin sign-in failed:", err);
-      errorEl.textContent = err && err.message ? err.message : "Admin sign-in failed.";
-    } finally { btn.disabled = false; btn.textContent = "Sign in as Admin"; }
+    } finally { submit.disabled = false; submit.textContent = "Continue"; }
   });
 
   var toastTimer = null;
@@ -1329,7 +1263,10 @@
     var approvalCard = document.getElementById("approval-details-card");
     var approvalValue = document.getElementById("approval-details-value");
     if (approvalCard && approvalValue) {
-      approvalCard.style.display = approvalName || approvalPosition ? "block" : "none";
+      // Keep approval details off the Create/Open Draft screen.
+      // Show them only once the handover is in review or submitted.
+      var showApprovalDetails = rec.status !== "draft" && Boolean(approvalName || approvalPosition);
+      approvalCard.style.display = showApprovalDetails ? "block" : "none";
       approvalValue.textContent = [approvalName, approvalPosition].filter(Boolean).join(" — ");
     }
     var legacyKTText = rec.fields.ktsupportspecialevents || "";
@@ -1751,6 +1688,8 @@
       document.getElementById("handover-title").textContent = "Venue Handover";
       document.getElementById("handover-status-badge").style.display = "none";
       document.getElementById("reviewer-card").style.display = "none";
+      var approvalCardWithoutVenue = document.getElementById("approval-details-card");
+      if (approvalCardWithoutVenue) approvalCardWithoutVenue.style.display = "none";
       document.getElementById("btn-pdf-export").style.display = "none";
       document.getElementById("btn-send-review-handover").style.display = "none";
       document.getElementById("btn-send-back-handover").style.display = "none";
