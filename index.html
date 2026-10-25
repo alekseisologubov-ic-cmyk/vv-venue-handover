@@ -1,18 +1,3 @@
-VIRGIN VOYAGES VENUE HANDOVER — FULL FRONTEND SOURCE (TXT)
-Email-only ship-user entry; existing admin login and report workflow retained.
-
-IMPORTANT
-- This is the complete frontend source from the previously prepared Venue Handover build, with the ship login button text changed to “Continue with Company Email”.
-- It uses the existing Supabase project URL and publishable key already present in the source. Never add a service-role key to frontend code.
-- The login calls signInAnonymously() and then vh-access mode identify. The Edge Function must remain deployed and must allow identify without a ship password.
-- Email-only domain checking does not verify that the user owns the email address. Anyone can type a company-domain address.
-- This file has not been tested against your live production project in this session. Back up your current deployed HTML before replacing it.
-- This TXT contains the full HTML source; to deploy, copy the complete HTML content (starting at <!DOCTYPE html>) into your project’s index.html.
-
-================================================================================
-FULL index.html SOURCE
-================================================================================
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
