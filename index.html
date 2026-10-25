@@ -410,7 +410,15 @@
     <h2>Venue Handover</h2>
     <p>Enter your Virgin Voyages email address to continue. No personal password or confirmation email is required.</p>
     <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="email" placeholder="name@virginvoyages.com" required>
-    <button type="submit" id="auth-submit">Continue</button>
+    <button type="submit" id="auth-submit">Continue as Ship User</button>
+    <div style="border-top:1px solid #eadfea;margin-top:22px;padding-top:16px;">
+      <button type="button" id="admin-login-toggle" style="background:#3b155f;margin-top:0;">Admin Login</button>
+      <div id="admin-login-panel" style="display:none;margin-top:10px;">
+        <label for="admin-password">Admin password</label>
+        <input id="admin-password" type="password" autocomplete="current-password" placeholder="Enter admin password">
+        <button type="button" id="admin-login-submit" style="background:#3b155f;">Sign in as Admin</button>
+      </div>
+    </div>
     <p class="auth-error" id="auth-error" role="alert"></p>
   </form>
 </div>
@@ -793,37 +801,26 @@
 
   async function saveRecord(venueKey, rec){
     lastSupabaseSaveError = "";
-    if (!SUPABASE_CONFIGURED){
-      lastSupabaseSaveError = "Secure cloud storage is required; local-only save is disabled.";
-      console.error(lastSupabaseSaveError);
-      return false;
+    if (SUPABASE_CONFIGURED){
+      var fullRow = recordToRow(venueKey, rec);
+      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
+      
+      if (res.error){ 
+        lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
+        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error);
+        var fallbackRow = Object.assign({}, fullRow);
+        delete fallbackRow.reviewer_comments;
+        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
+        if (resFallback.error) {
+          lastSupabaseSaveError = [resFallback.error.message, resFallback.error.details, resFallback.error.hint, resFallback.error.code].filter(Boolean).join(" | ");
+          console.error("Supabase Save Error:", resFallback.error);
+          return false;
+        }
+      }
+      return true;
     }
-
-    var fullRow = recordToRow(venueKey, rec);
-    var existing = await sb.from("handovers").select("id").eq("id", venueKey).maybeSingle();
-    if (existing.error){
-      lastSupabaseSaveError = [existing.error.message, existing.error.details, existing.error.hint, existing.error.code].filter(Boolean).join(" | ");
-      console.error("Could not check existing handover before save:", existing.error);
-      return false;
-    }
-
-    // Update existing records using UPDATE, not UPSERT. UPSERT can invoke the
-    // INSERT RLS policy on conflict and block reviewer approval of existing rows.
-    var res;
-    if (existing.data){
-      var updateRow = Object.assign({}, fullRow);
-      delete updateRow.id;
-      res = await sb.from("handovers").update(updateRow).eq("id", venueKey);
-    } else {
-      res = await sb.from("handovers").insert(fullRow);
-    }
-
-    if (res.error){
-      lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
-      console.error("Supabase Save Error:", res.error);
-      return false;
-    }
-    return true;
+    console.error("Secure cloud storage is required; local-only save is disabled.");
+    return false;
   }
 
   async function softDeleteRecord(venueKey){
@@ -981,7 +978,41 @@
       currentUser = null; currentRole = null; currentAssignments = [];
       console.error("Venue Handover sign-in failed:", err);
       errorEl.textContent = (err && err.message) ? err.message : "Could not continue. Check the browser console for details.";
-    } finally { submit.disabled = false; submit.textContent = "Continue"; }
+    } finally { submit.disabled = false; submit.textContent = "Continue as Ship User"; }
+  });
+
+  // Admin access is granted only by the server after validating VH_ADMIN_PASSWORD.
+  document.getElementById("admin-login-toggle").addEventListener("click", function(){
+    var panel = document.getElementById("admin-login-panel");
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
+    if (panel.style.display === "block") document.getElementById("admin-password").focus();
+  });
+  document.getElementById("admin-login-submit").addEventListener("click", async function(){
+    var errorEl = document.getElementById("auth-error");
+    var btn = document.getElementById("admin-login-submit");
+    var password = document.getElementById("admin-password").value;
+    errorEl.textContent = "";
+    if (!password) { errorEl.textContent = "Enter the admin password."; return; }
+    btn.disabled = true; btn.textContent = "Verifying…";
+    try {
+      if (!SUPABASE_CONFIGURED || !sb) throw new Error("Supabase is not configured.");
+      var existing = await sb.auth.getSession();
+      if (existing.data.session) await sb.auth.signOut();
+      var auth = await sb.auth.signInAnonymously();
+      if (auth.error) throw auth.error;
+      currentUser = auth.data.user;
+      await callAccessFunction("admin", "", password);
+      await loadCurrentRole(currentUser);
+      if (currentRole !== "admin") throw new Error("Admin role was not assigned. Check the Supabase Edge Function.");
+      document.getElementById("admin-password").value = "";
+      setAuthenticatedUI(true);
+      route();
+    } catch (err) {
+      if (sb) { try { await sb.auth.signOut(); } catch (_) {} }
+      currentUser = null; currentRole = null; currentAssignments = [];
+      console.error("Venue Handover admin sign-in failed:", err);
+      errorEl.textContent = err && err.message ? err.message : "Admin sign-in failed.";
+    } finally { btn.disabled = false; btn.textContent = "Sign in as Admin"; }
   });
 
   var toastTimer = null;
