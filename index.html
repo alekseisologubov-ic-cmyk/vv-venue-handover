@@ -930,14 +930,18 @@
     var submit = document.getElementById("auth-submit");
     errorEl.textContent = ""; submit.disabled = true; submit.textContent = "Continuing…";
     try {
-      var email = document.getElementById("auth-email").value
-        .replace(/[\u200B-\u200D\uFEFF]/g, "")
-        .trim()
+      // Normalize pasted addresses (spaces, non-breaking spaces and invisible characters).
+      var email = String(document.getElementById("auth-email").value || "")
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF\u00A0\u202F]/g, "")
+        .replace(/\s+/g, "")
         .toLowerCase();
-      var emailParts = email.split("@");
-      if (emailParts.length !== 2 || !emailParts[0] || emailParts[1] !== "virginvoyages.com") {
-        throw new Error("Only Virgin Voyages email addresses are allowed. Please use name@virginvoyages.com.");
+      var emailMatch = email.match(/^([^@]+)@([^@]+)$/);
+      var emailDomain = emailMatch ? emailMatch[2].replace(/[。．｡]/g, ".") : "";
+      if (!emailMatch || !emailMatch[1] || emailDomain !== "virginvoyages.com") {
+        throw new Error("Email check failed. Enter your address ending exactly in @virginvoyages.com.");
       }
+      email = emailMatch[1] + "@" + emailDomain;
       var existing = await sb.auth.getSession();
       if (existing.data.session) await sb.auth.signOut();
       var auth = await sb.auth.signInAnonymously();
@@ -948,9 +952,10 @@
       setAuthenticatedUI(true);
       route();
     } catch(err) {
-      if (sb) await sb.auth.signOut();
+      if (sb) { try { await sb.auth.signOut(); } catch (_) {} }
       currentUser = null; currentRole = null; currentAssignments = [];
-      errorEl.textContent = err.message || "Could not continue.";
+      console.error("Venue Handover sign-in failed:", err);
+      errorEl.textContent = (err && err.message) ? err.message : "Could not continue. Check the browser console for details.";
     } finally { submit.disabled = false; submit.textContent = "Continue"; }
   });
 
