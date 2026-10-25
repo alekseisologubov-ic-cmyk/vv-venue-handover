@@ -1934,7 +1934,8 @@
       value.textContent = approverName + " — " + approverPosition;
     }
     showToast("Approved and submitted");
-    window.location.hash = "submitted?filter=in_review";
+    // A completed approval belongs in the Submitted Handovers folder, not In Review.
+    window.location.hash = "submitted?filter=submitted";
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
