@@ -500,6 +500,12 @@
       Pick a venue above to create or continue its handover.
     </p>
 
+    <!-- Approval details: appears at the top of the report and in PDF/print -->
+    <section class="attachments-card" id="approval-details-card" style="display:none; border-top:3px solid #1E7A3A; margin-bottom:18px; padding:18px 22px;">
+      <div class="field-label" style="color:#1E7A3A; margin-bottom:10px;">— APPROVED BY</div>
+      <div id="approval-details-value" style="font-weight:700; font-size:15px;"></div>
+    </section>
+
     <!-- Reviewer Comments Block -->
     <section class="attachments-card reviewer-card" id="reviewer-card" style="display:none;">
       <div class="field-label" style="color:#856404;"><span class="dash" style="color:#856404;">—</span>Reviewer Comments</div>
@@ -1247,6 +1253,14 @@
     // carry forward their attachments. Remove Operating Hours from the UI only;
     // any historic value remains in the saved record.
     rec.fields = Object.assign({}, rec.fields || {});
+    var approvalName = String(rec.fields._approvalName || "").trim();
+    var approvalPosition = String(rec.fields._approvalPosition || "").trim();
+    var approvalCard = document.getElementById("approval-details-card");
+    var approvalValue = document.getElementById("approval-details-value");
+    if (approvalCard && approvalValue) {
+      approvalCard.style.display = approvalName || approvalPosition ? "block" : "none";
+      approvalValue.textContent = [approvalName, approvalPosition].filter(Boolean).join(" — ");
+    }
     var legacyKTText = rec.fields.ktsupportspecialevents || "";
     if (legacyKTText && !rec.fields.ktmatrix) rec.fields.ktmatrix = legacyKTText;
     else if (legacyKTText && rec.fields.ktmatrix && rec.fields.ktmatrix.indexOf(legacyKTText) === -1) {
@@ -1891,8 +1905,34 @@
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
+    // Ask for the approver details at the point of approval; no email is sent.
+    var existing = await fetchHandoverRecord(currentVenueKey);
+    var savedFields = Object.assign({}, existing.fields || {});
+    var approverName = window.prompt("Approver full name:", savedFields._approvalName || "");
+    if (approverName === null) return;
+    approverName = approverName.trim();
+    if (!approverName) { window.alert("Please enter the approver's name."); return; }
+
+    var approverPosition = window.prompt("Approver position/title:", savedFields._approvalPosition || "");
+    if (approverPosition === null) return;
+    approverPosition = approverPosition.trim();
+    if (!approverPosition) { window.alert("Please enter the approver's position/title."); return; }
+
+    savedFields._approvalName = approverName;
+    savedFields._approvalPosition = approverPosition;
     var now = new Date().toISOString();
-    await persistCurrent({ status: "submitted", submittedAt: now });
+    var result = await persistCurrent({
+      fields: savedFields,
+      status: "submitted",
+      submittedAt: now
+    });
+    if (!result || result.status !== "submitted") return;
+    var card = document.getElementById("approval-details-card");
+    var value = document.getElementById("approval-details-value");
+    if (card && value) {
+      card.style.display = "block";
+      value.textContent = approverName + " — " + approverPosition;
+    }
     showToast("Approved and submitted");
     window.location.hash = "submitted?filter=in_review";
   });
