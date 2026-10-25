@@ -408,12 +408,15 @@
   <form class="auth-panel" id="auth-form">
     <div class="eyebrow" style="color:var(--vv-red-deep);">— VIRGIN VOYAGES</div>
     <h2>Venue Handover</h2>
-    <p>Enter your Virgin Voyages email address to continue. No personal password or confirmation email is required.</p>
-    <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="email" placeholder="name@virginvoyages.com" required>
+    <p>Enter your Virgin Voyages email and the shared Ship User password. Email confirmation is disabled; access is checked securely by the server.</p>
+    <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="username" placeholder="name@virginvoyages.com" required>
+    <label for="ship-password">Ship User password</label><input id="ship-password" type="password" autocomplete="current-password" placeholder="Enter shared Ship User password" required>
     <button type="submit" id="auth-submit">Continue as Ship User</button>
     <div style="border-top:1px solid #eadfea;margin-top:22px;padding-top:16px;">
       <button type="button" id="admin-login-toggle" style="background:#3b155f;margin-top:0;">Admin Login</button>
       <div id="admin-login-panel" style="display:none;margin-top:10px;">
+        <label for="admin-email">Admin email</label>
+        <input id="admin-email" type="email" autocomplete="username" placeholder="Authorized admin email">
         <label for="admin-password">Admin password</label>
         <input id="admin-password" type="password" autocomplete="current-password" placeholder="Enter admin password">
         <button type="button" id="admin-login-submit" style="background:#3b155f;">Sign in as Admin</button>
@@ -803,19 +806,35 @@
     lastSupabaseSaveError = "";
     if (SUPABASE_CONFIGURED){
       var fullRow = recordToRow(venueKey, rec);
-      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
-      
-      if (res.error){ 
+      // Existing records are UPDATED, never upserted. This avoids accidental
+      // duplicate/insert behavior when changing status or editing an old report.
+      var exists = await sb.from("handovers").select("id").eq("id", venueKey).maybeSingle();
+      if (exists.error){
+        lastSupabaseSaveError = [exists.error.message, exists.error.details, exists.error.hint, exists.error.code].filter(Boolean).join(" | ");
+        console.error("Supabase existence check failed:", exists.error);
+        return false;
+      }
+      var res = exists.data
+        ? await sb.from("handovers").update(fullRow).eq("id", venueKey).select("id").maybeSingle()
+        : await sb.from("handovers").insert(fullRow).select("id").maybeSingle();
+
+      if (res.error){
         lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
         console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error);
         var fallbackRow = Object.assign({}, fullRow);
         delete fallbackRow.reviewer_comments;
-        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
-        if (resFallback.error) {
-          lastSupabaseSaveError = [resFallback.error.message, resFallback.error.details, resFallback.error.hint, resFallback.error.code].filter(Boolean).join(" | ");
-          console.error("Supabase Save Error:", resFallback.error);
+        res = exists.data
+          ? await sb.from("handovers").update(fallbackRow).eq("id", venueKey).select("id").maybeSingle()
+          : await sb.from("handovers").insert(fallbackRow).select("id").maybeSingle();
+        if (res.error){
+          lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
+          console.error("Supabase Save Error:", res.error);
           return false;
         }
+      }
+      if (!res.data){
+        lastSupabaseSaveError = "Supabase did not confirm that the handover row was saved. Check role permissions and RLS.";
+        return false;
       }
       return true;
     }
@@ -993,7 +1012,10 @@
       var auth = await withTimeout(sb.auth.signInAnonymously(), "Creating the sign-in session", 15000);
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
-      await callAccessFunction("identify", email, "");
+      var shipPassword = document.getElementById("ship-password").value;
+      if (!shipPassword) throw new Error("Enter the shared Ship User password.");
+      await callAccessFunction("identify", email, shipPassword);
+      document.getElementById("ship-password").value = "";
       await withTimeout(loadCurrentRole(currentUser), "Loading your access role", 15000);
       setAuthenticatedUI(true);
       route();
@@ -1015,7 +1037,9 @@
     var errorEl = document.getElementById("auth-error");
     var btn = document.getElementById("admin-login-submit");
     var password = document.getElementById("admin-password").value;
+    var adminEmail = String(document.getElementById("admin-email").value || "").trim().toLowerCase();
     errorEl.textContent = "";
+    if (!adminEmail) { errorEl.textContent = "Enter the authorized admin email."; return; }
     if (!password) { errorEl.textContent = "Enter the admin password."; return; }
     btn.disabled = true; btn.textContent = "Verifying…";
     try {
@@ -1025,10 +1049,11 @@
       var auth = await sb.auth.signInAnonymously();
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
-      await callAccessFunction("admin", "", password);
-      await loadCurrentRole(currentUser);
+      await callAccessFunction("admin", adminEmail, password);
+      await withTimeout(loadCurrentRole(currentUser), "Loading your admin role", 15000);
       if (currentRole !== "admin") throw new Error("Admin role was not assigned. Check the Supabase Edge Function.");
       document.getElementById("admin-password").value = "";
+      document.getElementById("admin-email").value = "";
       setAuthenticatedUI(true);
       route();
     } catch (err) {
@@ -1110,7 +1135,7 @@
     if (password === null || !password) return;
     try {
       await callAccessFunction("reviewer", "", password);
-      await loadCurrentRole(currentUser);
+      await withTimeout(loadCurrentRole(currentUser), "Loading your access role", 15000);
       setAuthenticatedUI(true);
       window.location.hash = "submitted?filter=in_review";
     } catch (e) { window.alert(e.message || "Reviewer access denied."); }
