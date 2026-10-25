@@ -789,17 +789,22 @@
     return emptyRecord();
   }
 
+  var lastSupabaseSaveError = "";
+
   async function saveRecord(venueKey, rec){
+    lastSupabaseSaveError = "";
     if (SUPABASE_CONFIGURED){
       var fullRow = recordToRow(venueKey, rec);
       var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
       
       if (res.error){ 
-        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error.message);
+        lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
+        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error);
         var fallbackRow = Object.assign({}, fullRow);
         delete fallbackRow.reviewer_comments;
         var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
         if (resFallback.error) {
+          lastSupabaseSaveError = [resFallback.error.message, resFallback.error.details, resFallback.error.hint, resFallback.error.code].filter(Boolean).join(" | ");
           console.error("Supabase Save Error:", resFallback.error);
           return false;
         }
@@ -1936,7 +1941,7 @@
     var saveOk = await saveRecord(currentVenueKey, approvalRecord);
     if (!saveOk) {
       setSyncStatus("error");
-      window.alert("Approval could not be saved to the database. The report has NOT been submitted. Please check the browser console and Supabase logs.");
+      window.alert("Approval could not be saved to the database. The report has NOT been submitted.\n\nDatabase error: " + (lastSupabaseSaveError || "No database error details were returned. Open DevTools Console and Supabase Postgres logs."));
       return;
     }
 
