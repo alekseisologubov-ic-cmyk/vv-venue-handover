@@ -1809,7 +1809,7 @@
   function scheduleSave(){
     setSyncStatus("saving");
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){ persistCurrent(); showToast("Saved"); }, 500);
+    saveTimer = setTimeout(async function(){ try { var saved = await persistCurrent(); if (saved) showToast("Saved"); } catch (err) { console.error("Auto-save failed:", err); setSyncStatus("error"); } }, 500);
   }
 
   document.getElementById("handover-fieldset").addEventListener("input", function(e){
@@ -1897,77 +1897,88 @@
     }
   });
 
+  async function saveStatusAndNavigate(status, filter, successMessage, extraOverrides) {
+    var btn = null;
+    try {
+      var record = await persistCurrent(Object.assign({}, extraOverrides || {}, { status: status }));
+      if (!record || record.status !== status) {
+        throw new Error(lastSupabaseSaveError || "The database did not confirm the requested status.");
+      }
+      // Verify the saved row before leaving the editor.
+      var verified = await fetchHandoverRecord(currentVenueKey);
+      if (!verified || verified.status !== status) {
+        throw new Error("Saved status could not be verified in Supabase.");
+      }
+      showToast(successMessage);
+      window.location.hash = "submitted?filter=" + encodeURIComponent(filter);
+    } catch (err) {
+      console.error("Handover status transition failed:", status, err);
+      setSyncStatus("error");
+      window.alert("The handover was NOT moved. Save/permission error: " + (err && err.message ? err.message : err));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
-    await persistCurrent({ status: "in_review" });
-    showToast("Sent for review");
-    window.location.hash = "submitted?filter=draft";
+    await saveStatusAndNavigate("in_review", "in_review", "Sent for review");
   });
 
   document.getElementById("btn-send-back-handover").addEventListener("click", async function(){
-    await persistCurrent({ status: "draft" });
-    showToast("Sent back to open");
-    window.location.hash = "submitted?filter=in_review";
+    await saveStatusAndNavigate("draft", "draft", "Sent back to Open", { submittedAt: null });
   });
 
   document.getElementById("btn-submit-handover").addEventListener("click", async function(){
-    // Ask for the approver details at the point of approval; no email is sent.
-    var existing = await fetchHandoverRecord(currentVenueKey);
-    var savedFields = Object.assign({}, existing.fields || {});
-    var approverName = window.prompt("Approver full name:", savedFields._approvalName || "");
-    if (approverName === null) return;
-    approverName = approverName.trim();
-    if (!approverName) { window.alert("Please enter the approver's name."); return; }
+    // Collect approver details and save them with the final status.
+    try {
+      var existing = await fetchHandoverRecord(currentVenueKey);
+      var savedFields = Object.assign({}, existing.fields || {});
+      var approverName = window.prompt("Approver full name:", savedFields._approvalName || "");
+      if (approverName === null) return;
+      approverName = approverName.trim();
+      if (!approverName) { window.alert("Please enter the approver's name."); return; }
 
-    var approverPosition = window.prompt("Approver position/title:", savedFields._approvalPosition || "");
-    if (approverPosition === null) return;
-    approverPosition = approverPosition.trim();
-    if (!approverPosition) { window.alert("Please enter the approver's position/title."); return; }
+      var approverPosition = window.prompt("Approver position/title:", savedFields._approvalPosition || "");
+      if (approverPosition === null) return;
+      approverPosition = approverPosition.trim();
+      if (!approverPosition) { window.alert("Please enter the approver's position/title."); return; }
 
-    savedFields._approvalName = approverName;
-    savedFields._approvalPosition = approverPosition;
-    var now = new Date().toISOString();
+      savedFields._approvalName = approverName;
+      savedFields._approvalPosition = approverPosition;
+      var now = new Date().toISOString();
+      var currentValues = currentFormValues();
+      currentValues.fields = Object.assign({}, currentValues.fields || {}, savedFields);
+      var approvalRecord = Object.assign({}, existing, currentValues, {
+        fields: currentValues.fields,
+        status: "submitted",
+        submittedAt: now,
+        updatedAt: Date.now()
+      });
 
-    // Merge approval metadata into the latest form fields so the current textarea
-    // values do not overwrite the approver details during persistCurrent().
-    var currentValues = currentFormValues();
-    currentValues.fields = Object.assign({}, currentValues.fields || {}, savedFields);
-    var existingBeforeApproval = await fetchHandoverRecord(currentVenueKey);
-    var approvalRecord = Object.assign({}, existingBeforeApproval, currentValues, {
-      fields: currentValues.fields,
-      status: "submitted",
-      submittedAt: now,
-      updatedAt: Date.now()
-    });
-    var saveOk = await saveRecord(currentVenueKey, approvalRecord);
-    if (!saveOk) {
+      var saveOk = await saveRecord(currentVenueKey, approvalRecord);
+      if (!saveOk) throw new Error(lastSupabaseSaveError || "Supabase did not save the approval.");
+      var verified = await fetchHandoverRecord(currentVenueKey);
+      if (!verified || verified.status !== "submitted") {
+        throw new Error("Supabase did not confirm Submitted status.");
+      }
+      applyRecordToForm(currentVenueKey, verified);
+      var card = document.getElementById("approval-details-card");
+      var value = document.getElementById("approval-details-value");
+      if (card && value) {
+        card.style.display = "block";
+        value.textContent = approverName + " — " + approverPosition;
+      }
+      showToast("Approved and submitted");
+      window.location.hash = "submitted?filter=submitted";
+    } catch (err) {
+      console.error("Handover approval failed:", err);
       setSyncStatus("error");
-      window.alert("Approval could not be saved to the database. The report has NOT been submitted.\n\nDatabase error: " + (lastSupabaseSaveError || "No database error details were returned. Open DevTools Console and Supabase Postgres logs."));
-      return;
+      window.alert("Approval failed. This handover was NOT moved to Submitted.\n\n" + (err && err.message ? err.message : err));
     }
-
-    // Verify the database actually contains the submitted status before navigating.
-    var verified = await fetchHandoverRecord(currentVenueKey);
-    if (!verified || verified.status !== "submitted") {
-      setSyncStatus("error");
-      window.alert("The save request completed, but the database still does not show this report as Submitted. It has not been moved to the Submitted folder.");
-      return;
-    }
-    applyRecordToForm(currentVenueKey, verified);
-    var card = document.getElementById("approval-details-card");
-    var value = document.getElementById("approval-details-value");
-    if (card && value) {
-      card.style.display = "block";
-      value.textContent = approverName + " — " + approverPosition;
-    }
-    showToast("Approved and submitted");
-    // A completed approval belongs in the Submitted Handovers folder, not In Review.
-    window.location.hash = "submitted?filter=submitted";
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
-    await persistCurrent({ status: "draft", submittedAt: null });
-    showToast("Reopened as draft");
-    window.location.hash = "submitted?filter=all";
+    await saveStatusAndNavigate("draft", "draft", "Reopened as draft", { submittedAt: null });
   });
 
   document.getElementById("btn-delete-handover").addEventListener("click", async function(){
