@@ -793,26 +793,37 @@
 
   async function saveRecord(venueKey, rec){
     lastSupabaseSaveError = "";
-    if (SUPABASE_CONFIGURED){
-      var fullRow = recordToRow(venueKey, rec);
-      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
-      
-      if (res.error){ 
-        lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
-        console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error);
-        var fallbackRow = Object.assign({}, fullRow);
-        delete fallbackRow.reviewer_comments;
-        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
-        if (resFallback.error) {
-          lastSupabaseSaveError = [resFallback.error.message, resFallback.error.details, resFallback.error.hint, resFallback.error.code].filter(Boolean).join(" | ");
-          console.error("Supabase Save Error:", resFallback.error);
-          return false;
-        }
-      }
-      return true;
+    if (!SUPABASE_CONFIGURED){
+      lastSupabaseSaveError = "Secure cloud storage is required; local-only save is disabled.";
+      console.error(lastSupabaseSaveError);
+      return false;
     }
-    console.error("Secure cloud storage is required; local-only save is disabled.");
-    return false;
+
+    var fullRow = recordToRow(venueKey, rec);
+    var existing = await sb.from("handovers").select("id").eq("id", venueKey).maybeSingle();
+    if (existing.error){
+      lastSupabaseSaveError = [existing.error.message, existing.error.details, existing.error.hint, existing.error.code].filter(Boolean).join(" | ");
+      console.error("Could not check existing handover before save:", existing.error);
+      return false;
+    }
+
+    // Update existing records using UPDATE, not UPSERT. UPSERT can invoke the
+    // INSERT RLS policy on conflict and block reviewer approval of existing rows.
+    var res;
+    if (existing.data){
+      var updateRow = Object.assign({}, fullRow);
+      delete updateRow.id;
+      res = await sb.from("handovers").update(updateRow).eq("id", venueKey);
+    } else {
+      res = await sb.from("handovers").insert(fullRow);
+    }
+
+    if (res.error){
+      lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
+      console.error("Supabase Save Error:", res.error);
+      return false;
+    }
+    return true;
   }
 
   async function softDeleteRecord(venueKey){
