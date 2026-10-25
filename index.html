@@ -885,16 +885,38 @@
   function readReviewerAuth(){ return currentRole === "shore_reviewer" || currentRole === "admin"; }
   function writeReviewerAuth(ok){ /* Reviewer access comes only from the server-assigned role. */ }
 
-  async function callAccessFunction(mode, email, password){
-    var session = (await sb.auth.getSession()).data.session;
-    if (!session) throw new Error("Session not ready. Please try again.");
-    var response = await fetch(SUPABASE_URL + "/functions/v1/vh-access", {
-      method:"POST",
-      headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
-      body:JSON.stringify({mode:mode, email:email || "", password:password || ""})
+  // Fail clearly instead of leaving the sign-in screen stuck forever.
+  function withTimeout(promise, label, ms){
+    var timeoutId;
+    var timeout = new Promise(function(_, reject){
+      timeoutId = setTimeout(function(){ reject(new Error(label + " timed out after " + Math.round(ms/1000) + " seconds. Check Supabase status, Auth settings, and the vh-access Edge Function logs.")); }, ms);
     });
-    var payload = await response.json().catch(function(){ return {}; });
-    if (!response.ok) throw new Error(payload.error || "Access request failed.");
+    return Promise.race([promise, timeout]).finally(function(){ clearTimeout(timeoutId); });
+  }
+
+  async function callAccessFunction(mode, email, password){
+    var sessionResult = await withTimeout(sb.auth.getSession(), "Checking the sign-in session", 15000);
+    if (sessionResult.error) throw sessionResult.error;
+    var session = sessionResult.data && sessionResult.data.session;
+    if (!session) throw new Error("Session not ready. Please try again.");
+
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, 15000);
+    var response;
+    try {
+      response = await fetch(SUPABASE_URL + "/functions/v1/vh-access", {
+        method:"POST",
+        headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
+        body:JSON.stringify({mode:mode, email:email || "", password:password || ""}),
+        signal:controller.signal
+      });
+    } catch (err) {
+      if (err && err.name === "AbortError") throw new Error("The vh-access server did not respond within 15 seconds. Check Supabase Edge Function logs and deployment.");
+      throw err;
+    } finally { clearTimeout(timer); }
+
+    var payload = await withTimeout(response.json().catch(function(){ return {}; }), "Reading the access response", 10000);
+    if (!response.ok) throw new Error(payload.error || ("Access request failed (HTTP " + response.status + ")."));
     return payload;
   }
 
@@ -952,6 +974,7 @@
     var submit = document.getElementById("auth-submit");
     errorEl.textContent = ""; submit.disabled = true; submit.textContent = "Continuing…";
     try {
+      if (!SUPABASE_CONFIGURED || !sb) throw new Error("Supabase is not configured. Check the project URL and publishable key in the script.");
       // Normalize pasted addresses (spaces, non-breaking spaces and invisible characters).
       var email = String(document.getElementById("auth-email").value || "")
         .normalize("NFKC")
@@ -964,13 +987,14 @@
         throw new Error("Email check failed. Enter your address ending exactly in @virginvoyages.com.");
       }
       email = emailMatch[1] + "@" + emailDomain;
-      var existing = await sb.auth.getSession();
-      if (existing.data.session) await sb.auth.signOut();
-      var auth = await sb.auth.signInAnonymously();
+      var existing = await withTimeout(sb.auth.getSession(), "Checking the sign-in session", 15000);
+      if (existing.error) throw existing.error;
+      if (existing.data.session) await withTimeout(sb.auth.signOut(), "Clearing the previous session", 15000);
+      var auth = await withTimeout(sb.auth.signInAnonymously(), "Creating the sign-in session", 15000);
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
       await callAccessFunction("identify", email, "");
-      await loadCurrentRole(currentUser);
+      await withTimeout(loadCurrentRole(currentUser), "Loading your access role", 15000);
       setAuthenticatedUI(true);
       route();
     } catch(err) {
