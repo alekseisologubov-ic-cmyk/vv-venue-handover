@@ -382,8 +382,11 @@
   .doc-preview-table th, .doc-preview-table td { border: 1px solid #D9CBE2; padding: 6px 10px; text-align: left; }
   .doc-preview-table th { background: #F5F1F7; color: var(--vv-squid-ink); font-weight: 700; }
 
-  /* PRINT / PDF STYLING */
+  /* Image attachments appear as pictures in printed/PDF reports; non-image files remain names. */
+  .print-attachment-image { display:none; }
+  .print-attachment-image img { display:block; max-width:180px; max-height:125px; width:auto; height:auto; object-fit:contain; border:1px solid #ddd; border-radius:4px; margin:6px 0 8px; }
   @media print {
+    .print-attachment-image { display:block !important; }
     body { background: #fff !important; color: #000 !important; }
     header.band, footer.band, .back-link, .sync-bar, .venue-picker, .attachments-upload-row, .field-attach-row, .attachment-remove-link, .field-attach-chip-remove, .config-banner, .admin-pill, .status-toast, .attachment-modal { display: none !important; }
     main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
@@ -1347,7 +1350,7 @@
       
       var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
 
-      return '<div class="field-attach-chip">' + imgPreview + '📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
+      return '<div class="field-attach-chip">' + imgPreview + '📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '<div class="print-attachment-image" data-print-field="' + escapeHtml(fieldId) + '" data-print-idx="' + idx + '"></div></div>';
     }).join("");
 
     el.querySelectorAll("[data-open-field]").forEach(function(a){
@@ -1608,7 +1611,7 @@
       var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
 
       return '<div class="attachment-row">' + imgPreview + '📎 <a href="#" data-open-main="' + idx + '">' + escapeHtml(f.name) + '</a>' +
-        (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '</div>';
+        (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '<div class="print-attachment-image" data-print-main-idx="' + idx + '"></div></div>';
     }).join("");
 
     listEl.querySelectorAll("[data-open-main]").forEach(function(a){
@@ -1807,8 +1810,72 @@
     showToast("Saved");
   });
 
-  document.getElementById("btn-pdf-export").addEventListener("click", function(){
-    window.print();
+  function isPrintableImageAttachment(a){
+    var type = String((a && a.type) || "").toLowerCase();
+    var name = String((a && a.name) || "").toLowerCase();
+    var url = String((a && a.url) || "").toLowerCase();
+    return type.indexOf("image/") === 0 || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(name) ||
+      url.indexOf("data:image/") === 0 || /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i.test(url);
+  }
+
+  async function getAttachmentPrintUrl(a){
+    if (!a || !isPrintableImageAttachment(a)) return "";
+    if (a.url) return a.url;
+    if (SUPABASE_CONFIGURED && a.path && sb){
+      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 300);
+      if (!signed.error && signed.data && signed.data.signedUrl) return signed.data.signedUrl;
+      console.warn("Could not prepare image for PDF:", a.name, signed.error);
+    }
+    return "";
+  }
+
+  async function prepareAttachmentImagesForPrint(){
+    // Clear stale print images from any previous print attempt.
+    document.querySelectorAll(".print-attachment-image").forEach(function(el){ el.innerHTML = ""; });
+    var jobs = [];
+    document.querySelectorAll("[data-print-main-idx]").forEach(function(el){
+      var idx = Number(el.getAttribute("data-print-main-idx"));
+      var a = currentAttachments[idx];
+      if (isPrintableImageAttachment(a)) jobs.push({el:el, a:a});
+    });
+    document.querySelectorAll("[data-print-field]").forEach(function(el){
+      var field = el.getAttribute("data-print-field");
+      var idx = Number(el.getAttribute("data-print-idx"));
+      var a = (currentFieldAttachments[field] || [])[idx];
+      if (isPrintableImageAttachment(a)) jobs.push({el:el, a:a});
+    });
+    await Promise.all(jobs.map(async function(job){
+      try {
+        var url = await getAttachmentPrintUrl(job.a);
+        if (!url) return;
+        var img = document.createElement("img");
+        img.alt = job.a.name || "Attached photo";
+        img.src = url;
+        img.loading = "eager";
+        job.el.appendChild(img);
+        await new Promise(function(resolve){
+          if (img.complete) return resolve();
+          img.onload = resolve;
+          img.onerror = resolve;
+          setTimeout(resolve, 5000);
+        });
+      } catch(err) { console.warn("Print image preparation failed:", job.a && job.a.name, err); }
+    }));
+  }
+
+  document.getElementById("btn-pdf-export").addEventListener("click", async function(){
+    var btn = document.getElementById("btn-pdf-export");
+    var oldText = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Preparing PDF…"; }
+    try {
+      await prepareAttachmentImagesForPrint();
+      window.print();
+    } catch(err) {
+      console.error("PDF preparation failed:", err);
+      window.print();
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = oldText; }
+    }
   });
 
   document.getElementById("btn-send-review-handover").addEventListener("click", async function(){
