@@ -1,3 +1,18 @@
+VIRGIN VOYAGES VENUE HANDOVER — FULL FRONTEND SOURCE (TXT)
+Email-only ship-user entry; existing admin login and report workflow retained.
+
+IMPORTANT
+- This is the complete frontend source from the previously prepared Venue Handover build, with the ship login button text changed to “Continue with Company Email”.
+- It uses the existing Supabase project URL and publishable key already present in the source. Never add a service-role key to frontend code.
+- The login calls signInAnonymously() and then vh-access mode identify. The Edge Function must remain deployed and must allow identify without a ship password.
+- Email-only domain checking does not verify that the user owns the email address. Anyone can type a company-domain address.
+- This file has not been tested against your live production project in this session. Back up your current deployed HTML before replacing it.
+- This TXT contains the full HTML source; to deploy, copy the complete HTML content (starting at <!DOCTYPE html>) into your project’s index.html.
+
+================================================================================
+FULL index.html SOURCE
+================================================================================
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -403,20 +418,17 @@
 <body>
 
 <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
-<!-- Individual sign-in; authorization is enforced by Supabase RLS, not this UI. -->
+<!-- Email-only company-domain entry; this does not verify ownership of the email address. -->
 <div class="auth-gate" id="auth-gate">
   <form class="auth-panel" id="auth-form">
     <div class="eyebrow" style="color:var(--vv-red-deep);">— VIRGIN VOYAGES</div>
     <h2>Venue Handover</h2>
-    <p>Enter your Virgin Voyages email and the shared Ship User password. Email confirmation is disabled; access is checked securely by the server.</p>
-    <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="username" placeholder="name@virginvoyages.com" required>
-    <label for="ship-password">Ship User password</label><input id="ship-password" type="password" autocomplete="current-password" placeholder="Enter shared Ship User password" required>
-    <button type="submit" id="auth-submit">Continue as Ship User</button>
+    <p>Enter your Virgin Voyages email address to continue. No personal password or confirmation email is required.</p>
+    <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="email" placeholder="name@virginvoyages.com" required>
+    <button type="submit" id="auth-submit">Continue with Company Email</button>
     <div style="border-top:1px solid #eadfea;margin-top:22px;padding-top:16px;">
       <button type="button" id="admin-login-toggle" style="background:#3b155f;margin-top:0;">Admin Login</button>
       <div id="admin-login-panel" style="display:none;margin-top:10px;">
-        <label for="admin-email">Admin email</label>
-        <input id="admin-email" type="email" autocomplete="username" placeholder="Authorized admin email">
         <label for="admin-password">Admin password</label>
         <input id="admin-password" type="password" autocomplete="current-password" placeholder="Enter admin password">
         <button type="button" id="admin-login-submit" style="background:#3b155f;">Sign in as Admin</button>
@@ -806,35 +818,19 @@
     lastSupabaseSaveError = "";
     if (SUPABASE_CONFIGURED){
       var fullRow = recordToRow(venueKey, rec);
-      // Existing records are UPDATED, never upserted. This avoids accidental
-      // duplicate/insert behavior when changing status or editing an old report.
-      var exists = await sb.from("handovers").select("id").eq("id", venueKey).maybeSingle();
-      if (exists.error){
-        lastSupabaseSaveError = [exists.error.message, exists.error.details, exists.error.hint, exists.error.code].filter(Boolean).join(" | ");
-        console.error("Supabase existence check failed:", exists.error);
-        return false;
-      }
-      var res = exists.data
-        ? await sb.from("handovers").update(fullRow).eq("id", venueKey).select("id").maybeSingle()
-        : await sb.from("handovers").insert(fullRow).select("id").maybeSingle();
-
-      if (res.error){
+      var res = await sb.from("handovers").upsert(fullRow, { onConflict: "id" });
+      
+      if (res.error){ 
         lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
         console.warn("Retrying save with fallback payload due to DB constraint/column mismatch:", res.error);
         var fallbackRow = Object.assign({}, fullRow);
         delete fallbackRow.reviewer_comments;
-        res = exists.data
-          ? await sb.from("handovers").update(fallbackRow).eq("id", venueKey).select("id").maybeSingle()
-          : await sb.from("handovers").insert(fallbackRow).select("id").maybeSingle();
-        if (res.error){
-          lastSupabaseSaveError = [res.error.message, res.error.details, res.error.hint, res.error.code].filter(Boolean).join(" | ");
-          console.error("Supabase Save Error:", res.error);
+        var resFallback = await sb.from("handovers").upsert(fallbackRow, { onConflict: "id" });
+        if (resFallback.error) {
+          lastSupabaseSaveError = [resFallback.error.message, resFallback.error.details, resFallback.error.hint, resFallback.error.code].filter(Boolean).join(" | ");
+          console.error("Supabase Save Error:", resFallback.error);
           return false;
         }
-      }
-      if (!res.data){
-        lastSupabaseSaveError = "Supabase did not confirm that the handover row was saved. Check role permissions and RLS.";
-        return false;
       }
       return true;
     }
@@ -1012,10 +1008,7 @@
       var auth = await withTimeout(sb.auth.signInAnonymously(), "Creating the sign-in session", 15000);
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
-      var shipPassword = document.getElementById("ship-password").value;
-      if (!shipPassword) throw new Error("Enter the shared Ship User password.");
-      await callAccessFunction("identify", email, shipPassword);
-      document.getElementById("ship-password").value = "";
+      await callAccessFunction("identify", email, "");
       await withTimeout(loadCurrentRole(currentUser), "Loading your access role", 15000);
       setAuthenticatedUI(true);
       route();
@@ -1024,7 +1017,7 @@
       currentUser = null; currentRole = null; currentAssignments = [];
       console.error("Venue Handover sign-in failed:", err);
       errorEl.textContent = (err && err.message) ? err.message : "Could not continue. Check the browser console for details.";
-    } finally { submit.disabled = false; submit.textContent = "Continue as Ship User"; }
+    } finally { submit.disabled = false; submit.textContent = "Continue with Company Email"; }
   });
 
   // Admin access is granted only by the server after validating VH_ADMIN_PASSWORD.
@@ -1037,9 +1030,7 @@
     var errorEl = document.getElementById("auth-error");
     var btn = document.getElementById("admin-login-submit");
     var password = document.getElementById("admin-password").value;
-    var adminEmail = String(document.getElementById("admin-email").value || "").trim().toLowerCase();
     errorEl.textContent = "";
-    if (!adminEmail) { errorEl.textContent = "Enter the authorized admin email."; return; }
     if (!password) { errorEl.textContent = "Enter the admin password."; return; }
     btn.disabled = true; btn.textContent = "Verifying…";
     try {
@@ -1049,11 +1040,10 @@
       var auth = await sb.auth.signInAnonymously();
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
-      await callAccessFunction("admin", adminEmail, password);
-      await withTimeout(loadCurrentRole(currentUser), "Loading your admin role", 15000);
+      await callAccessFunction("admin", "", password);
+      await loadCurrentRole(currentUser);
       if (currentRole !== "admin") throw new Error("Admin role was not assigned. Check the Supabase Edge Function.");
       document.getElementById("admin-password").value = "";
-      document.getElementById("admin-email").value = "";
       setAuthenticatedUI(true);
       route();
     } catch (err) {
@@ -1135,7 +1125,7 @@
     if (password === null || !password) return;
     try {
       await callAccessFunction("reviewer", "", password);
-      await withTimeout(loadCurrentRole(currentUser), "Loading your access role", 15000);
+      await loadCurrentRole(currentUser);
       setAuthenticatedUI(true);
       window.location.hash = "submitted?filter=in_review";
     } catch (e) { window.alert(e.message || "Reviewer access denied."); }
@@ -2251,3 +2241,100 @@
 
 </body>
 </html>
+
+
+================================================================================
+SUPABASE EDGE FUNCTION: supabase/functions/vh-access/index.ts
+================================================================================
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
+  });
+
+  try {
+    if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    const url = Deno.env.get("SUPABASE_URL");
+    const anon = Deno.env.get("SUPABASE_ANON_KEY");
+    const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const reviewerPassword = Deno.env.get("VH_REVIEWER_PASSWORD");
+    const adminPassword = Deno.env.get("VH_ADMIN_PASSWORD");
+    if (!url || !anon || !service || !reviewerPassword || !adminPassword) {
+      return json({ error: "Server configuration incomplete. Set VH_REVIEWER_PASSWORD and VH_ADMIN_PASSWORD in Edge Function secrets." }, 500);
+    }
+
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    if (!token) return json({ error: "Missing session" }, 401);
+
+    const userClient = createClient(url, anon, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    });
+    const { data: { user }, error: userError } = await userClient.auth.getUser(token);
+    if (userError || !user) return json({ error: "Invalid session" }, 401);
+
+    const body = await req.json();
+    const mode = String(body.mode || "");
+    const admin = createClient(url, service, { auth: { persistSession: false } });
+
+    if (mode === "identify") {
+      const email = String(body.email || "").trim().toLowerCase();
+      if (!/^[^\s@]+@virginvoyages\.com$/.test(email)) return json({ error: "Use an @virginvoyages.com email address" }, 403);
+      // Email identifies a ship user; it does not grant admin or reviewer privileges.
+      const { data: existing, error: lookupError } = await admin.from("user_roles")
+        .select("user_id").eq("user_id", user.id).eq("role", "ship_user").limit(1);
+      if (lookupError) return json({ error: lookupError.message }, 500);
+      if (!existing || existing.length === 0) {
+        const { error } = await admin.from("user_roles").insert({ user_id: user.id, role: "ship_user", ship_slug: "*", station_slug: null });
+        if (error) return json({ error: `Could not assign ship access: ${error.message}` }, 500);
+      }
+      return json({ ok: true, role: "ship_user" });
+    }
+
+    if (mode === "admin") {
+      if (typeof body.password !== "string" || body.password.length === 0 || body.password !== adminPassword) {
+        return json({ error: "Incorrect admin password" }, 403);
+      }
+      const { data: existing, error: lookupError } = await admin.from("user_roles")
+        .select("user_id").eq("user_id", user.id).eq("role", "admin").limit(1);
+      if (lookupError) return json({ error: lookupError.message }, 500);
+      if (!existing || existing.length === 0) {
+        const { error } = await admin.from("user_roles").insert({ user_id: user.id, role: "admin", ship_slug: null, station_slug: null });
+        if (error) return json({ error: `Could not assign admin access: ${error.message}` }, 500);
+      }
+      return json({ ok: true, role: "admin" });
+    }
+
+    if (mode === "reviewer") {
+      if (typeof body.password !== "string" || body.password.length === 0 || body.password !== reviewerPassword) return json({ error: "Incorrect reviewer password" }, 403);
+      const { data: existing, error: lookupError } = await admin.from("user_roles")
+        .select("user_id").eq("user_id", user.id).eq("role", "shore_reviewer").limit(1);
+      if (lookupError) return json({ error: lookupError.message }, 500);
+      if (!existing || existing.length === 0) {
+        const { error } = await admin.from("user_roles").insert({ user_id: user.id, role: "shore_reviewer", ship_slug: null, station_slug: null });
+        if (error) return json({ error: `Could not assign reviewer access: ${error.message}` }, 500);
+      }
+      return json({ ok: true, role: "shore_reviewer" });
+    }
+
+    return json({ error: "Unknown access operation" }, 400);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "Unexpected server error" }, 500);
+  }
+});
+
+
+DEPLOYMENT NOTE
+The frontend and Edge Function are separate files in deployment. Copy the HTML section to index.html and the Edge Function section to supabase/functions/vh-access/index.ts, then deploy the Edge Function. This function requires the existing VH_ADMIN_PASSWORD and VH_REVIEWER_PASSWORD secrets and Supabase-provided URL/keys. It does not require VH_SHIP_PASSWORD. Do not run new SQL or change handover rows as part of this login change.
