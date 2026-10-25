@@ -1790,7 +1790,7 @@
     if (!ok){
       setSyncStatus("error");
       showToast("Couldn't save — check your connection and try again");
-      return next;
+      return null;
     }
 
     currentAttachments = attachments;
@@ -1921,12 +1921,33 @@
     savedFields._approvalName = approverName;
     savedFields._approvalPosition = approverPosition;
     var now = new Date().toISOString();
-    var result = await persistCurrent({
-      fields: savedFields,
+
+    // Merge approval metadata into the latest form fields so the current textarea
+    // values do not overwrite the approver details during persistCurrent().
+    var currentValues = currentFormValues();
+    currentValues.fields = Object.assign({}, currentValues.fields || {}, savedFields);
+    var existingBeforeApproval = await fetchHandoverRecord(currentVenueKey);
+    var approvalRecord = Object.assign({}, existingBeforeApproval, currentValues, {
+      fields: currentValues.fields,
       status: "submitted",
-      submittedAt: now
+      submittedAt: now,
+      updatedAt: Date.now()
     });
-    if (!result || result.status !== "submitted") return;
+    var saveOk = await saveRecord(currentVenueKey, approvalRecord);
+    if (!saveOk) {
+      setSyncStatus("error");
+      window.alert("Approval could not be saved to the database. The report has NOT been submitted. Please check the browser console and Supabase logs.");
+      return;
+    }
+
+    // Verify the database actually contains the submitted status before navigating.
+    var verified = await fetchHandoverRecord(currentVenueKey);
+    if (!verified || verified.status !== "submitted") {
+      setSyncStatus("error");
+      window.alert("The save request completed, but the database still does not show this report as Submitted. It has not been moved to the Submitted folder.");
+      return;
+    }
+    applyRecordToForm(currentVenueKey, verified);
     var card = document.getElementById("approval-details-card");
     var value = document.getElementById("approval-details-value");
     if (card && value) {
