@@ -411,6 +411,7 @@
     <p>Enter your Virgin Voyages email address to continue. No personal password or confirmation email is required.</p>
     <label for="auth-email">Company email</label><input id="auth-email" type="email" autocomplete="email" placeholder="name@virginvoyages.com" required>
     <button type="submit" id="auth-submit">Continue</button>
+    <button type="button" id="admin-login-button" style="margin-top:10px;background:#222;color:#fff;border:1px solid #555;">Admin Login</button>
     <p class="auth-error" id="auth-error" role="alert"></p>
   </form>
 </div>
@@ -971,6 +972,53 @@
       console.error("Venue Handover sign-in failed:", err);
       errorEl.textContent = (err && err.message) ? err.message : "Could not continue. Check the browser console for details.";
     } finally { submit.disabled = false; submit.textContent = "Continue"; }
+  });
+
+  // Admin sign-in uses the existing server-side VH_ADMIN_PASSWORD secret.
+  // Never place the Admin password in this HTML file or in client-side configuration.
+  document.getElementById("admin-login-button").addEventListener("click", async function(){
+    var errorEl = document.getElementById("auth-error");
+    var adminButton = document.getElementById("admin-login-button");
+    var continueButton = document.getElementById("auth-submit");
+    errorEl.textContent = "";
+    adminButton.disabled = true;
+    continueButton.disabled = true;
+    adminButton.textContent = "Checking Admin access…";
+    try {
+      var email = String(document.getElementById("auth-email").value || "")
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF\u00A0\u202F]/g, "")
+        .replace(/\s+/g, "")
+        .toLowerCase();
+      var emailMatch = email.match(/^([^@]+)@([^@]+)$/);
+      var emailDomain = emailMatch ? emailMatch[2].replace(/[。．｡]/g, ".") : "";
+      if (!emailMatch || !emailMatch[1] || emailDomain !== "virginvoyages.com") {
+        throw new Error("Enter your company email ending in @virginvoyages.com first.");
+      }
+      email = emailMatch[1] + "@" + emailDomain;
+      var password = window.prompt("Enter the existing Admin password:");
+      if (password === null) return;
+      if (!password) throw new Error("Admin password is required.");
+      var existing = await sb.auth.getSession();
+      if (existing.data.session) await sb.auth.signOut();
+      var auth = await sb.auth.signInAnonymously();
+      if (auth.error) throw auth.error;
+      currentUser = auth.data.user;
+      await callAccessFunction("admin", email, password);
+      await loadCurrentRole(currentUser);
+      if (currentRole !== "admin") throw new Error("Admin access was not assigned. Check the vh-access function and user_roles policies.");
+      setAuthenticatedUI(true);
+      route();
+    } catch (err) {
+      if (sb) { try { await sb.auth.signOut(); } catch (_) {} }
+      currentUser = null; currentRole = null; currentAssignments = [];
+      console.error("Venue Handover Admin sign-in failed:", err);
+      errorEl.textContent = (err && err.message) ? err.message : "Admin sign-in failed. Check the Edge Function logs.";
+    } finally {
+      adminButton.disabled = false;
+      continueButton.disabled = false;
+      adminButton.textContent = "Admin Login";
+    }
   });
 
   var toastTimer = null;
