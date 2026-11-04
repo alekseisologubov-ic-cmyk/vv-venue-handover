@@ -690,7 +690,7 @@
     if (rec._isNew) return true;
     return !!rec.createdByEmail && rec.createdByEmail.toLowerCase() === currentEmail;
   }
-  function canEditDraft(rec){ return isPrivileged() || isOwner(rec); }
+  function canEditDraft(rec){ return currentRole === "admin" || isOwner(rec); }
 
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -857,7 +857,6 @@
       var query = sb.from("handovers").select("*").order("updated_at", { ascending: false });
       if (statusFilter) query = query.eq("status", statusFilter);
       if (!includeDeleted) query = query.is("deleted_at", null);
-      if (statusFilter === "draft" && !isPrivileged()) query = query.eq("created_by_email", currentEmail || "__none__");
       var res = await query;
       if (res.error){ console.error(res.error); return []; }
       return (res.data || []).map(function(row){
@@ -1366,7 +1365,8 @@
 
     var admin = readAdmin();
     var reviewerOk = admin || readReviewerAuth();
-    var locked = (rec.status === "submitted" && !admin) || (rec.status === "in_review" && !reviewerOk);
+    var notMine = rec.status === "draft" && !rec._isNew && !canEditDraft(rec);
+    var locked = (rec.status === "submitted" && !admin) || (rec.status === "in_review" && !reviewerOk) || notMine;
     document.getElementById("handover-fieldset").disabled = locked;
     document.getElementById("handover-admin-flag").style.display = admin ? "inline" : "none";
 
@@ -1389,11 +1389,16 @@
     pdfBtn.style.display = (rec.status === "submitted" || rec.status === "in_review") ? "inline-block" : "none";
 
     if (rec.status === "draft") {
-      sendReviewBtn.style.display = "inline-block";
+      sendReviewBtn.style.display = notMine ? "none" : "inline-block";
       sendBackBtn.style.display = "none";
       submitBtn.style.display = "none";
       reopenBtn.style.display = "none";
-      lockedNote.style.display = "none";
+      if (notMine) {
+        lockedNote.style.display = "inline";
+        lockedNote.textContent = "Started by " + (rec.createdByEmail || "another user") + " — read-only for you";
+      } else {
+        lockedNote.style.display = "none";
+      }
     } else if (rec.status === "in_review") {
       sendReviewBtn.style.display = "none";
       sendBackBtn.style.display = reviewerOk ? "inline-block" : "none";
@@ -1807,12 +1812,6 @@
     var all0 = SUPABASE_CONFIGURED ? null : localLoadAll();
     if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec);
     if (venueKey !== currentVenueKey) return;
-
-    if (rec.status === "draft" && !rec._isNew && !canEditDraft(rec)) {
-      window.alert("This handover was started by another user, so you can't open it.");
-      window.location.hash = "home";
-      return;
-    }
 
     applyRecordToForm(venueKey, rec);
     setSyncStatus("live");
