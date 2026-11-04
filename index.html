@@ -678,6 +678,19 @@
   var currentUser = null;
   var currentRole = null;
   var currentAssignments = [];
+  var currentEmail = "";
+  try { currentEmail = localStorage.getItem("vv-handover-email") || ""; } catch (e) {}
+  function setCurrentEmail(e){
+    currentEmail = String(e || "").toLowerCase();
+    try { if (currentEmail) localStorage.setItem("vv-handover-email", currentEmail); else localStorage.removeItem("vv-handover-email"); } catch (_) {}
+  }
+  function isPrivileged(){ return currentRole === "admin" || currentRole === "shore_reviewer"; }
+  function isOwner(rec){
+    if (!rec) return false;
+    if (rec._isNew) return true;
+    return !!rec.createdByEmail && rec.createdByEmail.toLowerCase() === currentEmail;
+  }
+  function canEditDraft(rec){ return isPrivileged() || isOwner(rec); }
 
   var SHIPS = ["Brilliant Lady", "Valiant Lady", "Resilient Lady", "Scarlet Lady"];
 
@@ -740,6 +753,7 @@
     var outParsed = parseChefString(row.outgoing);
     var inParsed = parseChefString(row.incoming);
     return {
+      createdByEmail: row.created_by_email || "",
       ship: row.ship || "",
       outgoing: row.outgoing || "",
       outgoingName: row.outgoing_name || outParsed.name,
@@ -766,6 +780,7 @@
 
     return {
       id: venueKey,
+      created_by_email: rec.createdByEmail || "",
       ship: rec.ship || "",
       outgoing: outCombined,
       incoming: inCombined,
@@ -785,7 +800,7 @@
     if (SUPABASE_CONFIGURED){
       var res = await sb.from("handovers").select("*").eq("id", venueKey).maybeSingle();
       if (res.error){ console.error(res.error); return emptyRecord(); }
-      return res.data ? rowToRecord(res.data) : emptyRecord();
+      return res.data ? rowToRecord(res.data) : Object.assign(emptyRecord(), { _isNew: true });
     }
     return emptyRecord();
   }
@@ -842,6 +857,7 @@
       var query = sb.from("handovers").select("*").order("updated_at", { ascending: false });
       if (statusFilter) query = query.eq("status", statusFilter);
       if (!includeDeleted) query = query.is("deleted_at", null);
+      if (statusFilter === "draft" && !isPrivileged()) query = query.eq("created_by_email", currentEmail || "__none__");
       var res = await query;
       if (res.error){ console.error(res.error); return []; }
       return (res.data || []).map(function(row){
@@ -859,7 +875,7 @@
     return out;
   }
   function emptyRecord(){
-    return { ship:"", outgoing:"", outgoingName:"", outgoingPos:"", incoming:"", incomingName:"", incomingPos:"", date:"", fields:emptyFields(), reviewerComments:"", status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
+    return { createdByEmail:"", ship:"", outgoing:"", outgoingName:"", outgoingPos:"", incoming:"", incomingName:"", incomingPos:"", date:"", fields:emptyFields(), reviewerComments:"", status:"draft", submittedAt:null, deletedAt:null, attachments:[], fieldAttachments:{}, updatedAt:Date.now() };
   }
 
   function formatDateDisplay(isoDate){
@@ -889,6 +905,20 @@
     var payload = await response.json().catch(function(){ return {}; });
     if (!response.ok) throw new Error(payload.error || "Access request failed.");
     return payload;
+  }
+
+  async function callNotifyFunction(venueKey){
+    var session = (await sb.auth.getSession()).data.session;
+    if (!session) throw new Error("Session not ready.");
+    var response = await fetch(SUPABASE_URL + "/functions/v1/vh-notify-review", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
+      body:JSON.stringify({ venueKey: venueKey, appUrl: window.location.origin + window.location.pathname })
+    });
+    if (!response.ok) {
+      var p = await response.json().catch(function(){ return {}; });
+      throw new Error(p.error || "Notification failed.");
+    }
   }
 
   async function loadCurrentRole(user){
@@ -922,7 +952,11 @@
     if (sessionResult.error) throw sessionResult.error;
     if (sessionResult.data.session) {
       currentUser = sessionResult.data.session.user;
-      try { await loadCurrentRole(currentUser); setAuthenticatedUI(true); route(); }
+      try {
+        await loadCurrentRole(currentUser);
+        if (!currentEmail && currentRole === "ship_user") throw new Error("Please sign in again.");
+        setAuthenticatedUI(true); route();
+      }
       catch (e) { await sb.auth.signOut(); currentUser=null; currentRole=null; currentAssignments=[]; }
     }
     sb.auth.onAuthStateChange(function(event, session){
@@ -935,6 +969,7 @@
 
   document.getElementById("signout-btn").addEventListener("click", async function(){
     await sb.auth.signOut();
+    setCurrentEmail("");
     window.location.hash = "home";
     setAuthenticatedUI(false);
   });
@@ -963,6 +998,7 @@
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
       await callAccessFunction("identify", email, "");
+      setCurrentEmail(email);
       await loadCurrentRole(currentUser);
       setAuthenticatedUI(true);
       route();
@@ -1005,6 +1041,7 @@
       if (auth.error) throw auth.error;
       currentUser = auth.data.user;
       await callAccessFunction("admin", email, password);
+      setCurrentEmail(email);
       await loadCurrentRole(currentUser);
       if (currentRole !== "admin") throw new Error("Admin access was not assigned. Check the vh-access function and user_roles policies.");
       setAuthenticatedUI(true);
@@ -1383,7 +1420,8 @@
     }
 
     var deleteBtn = document.getElementById("btn-delete-handover");
-    deleteBtn.style.display = admin ? "inline-block" : "none";
+    var canDelete = admin || (rec.status === "draft" && !rec.deletedAt && !rec._isNew && isOwner(rec));
+    deleteBtn.style.display = canDelete ? "inline-block" : "none";
     deleteBtn.textContent = rec.deletedAt ? "Restore handover" : "Delete handover";
     deleteBtn.className = rec.deletedAt ? "list-row-restore" : "list-row-delete";
 
@@ -1770,6 +1808,12 @@
     if (!SUPABASE_CONFIGURED && !all0[venueKey]) await saveRecord(venueKey, rec);
     if (venueKey !== currentVenueKey) return;
 
+    if (rec.status === "draft" && !rec._isNew && !canEditDraft(rec)) {
+      window.alert("This handover was started by another user, so you can't open it.");
+      window.location.hash = "home";
+      return;
+    }
+
     applyRecordToForm(venueKey, rec);
     setSyncStatus("live");
 
@@ -1831,6 +1875,10 @@
     var venueKey = currentVenueKey;
     var existing = await fetchHandoverRecord(venueKey);
     var vals = currentFormValues();
+    if (!existing._isNew && existing.status === "draft" && !canEditDraft(existing)) {
+      showToast("You can only edit handovers you started");
+      return null;
+    }
 
     var attachments = (overrides && overrides.attachments) || existing.attachments || [];
 
@@ -1841,7 +1889,7 @@
       fileInput.value = "";
     }
 
-    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, updatedAt: Date.now() });
+    var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, createdByEmail: existing.createdByEmail || currentEmail, updatedAt: Date.now() });
     if (SUPABASE_CONFIGURED) skipNextRealtime = true;
     var ok = await saveRecord(venueKey, next);
 
@@ -1856,6 +1904,8 @@
     document.getElementById("handover-title").textContent = next.ship || "Venue Handover";
     renderFileListUI(currentAttachments, next.status === "submitted" && !readAdmin());
     setSyncStatus("live");
+    var delBtnNow = document.getElementById("btn-delete-handover");
+    if (delBtnNow && next.status === "draft" && !next.deletedAt) delBtnNow.style.display = "inline-block";
     return next;
   }
 
@@ -1962,7 +2012,12 @@
       if (!verified || verified.status !== status) {
         throw new Error("Saved status could not be verified in Supabase.");
       }
-      showToast(successMessage);
+      var toastText = successMessage;
+      if (status === "in_review") {
+        try { await callNotifyFunction(currentVenueKey); toastText = "Sent for review — reviewers notified by email"; }
+        catch (notifyErr) { console.error("Review email failed:", notifyErr); toastText = "Sent for review, but the email notification failed"; }
+      }
+      showToast(toastText);
       window.location.hash = "submitted?filter=" + encodeURIComponent(filter);
     } catch (err) {
       console.error("Handover status transition failed:", status, err);
@@ -2126,6 +2181,8 @@
 
     rows.forEach(function(r){
       var isDeleted = !!r.deletedAt;
+      var isMine = !isDeleted && r.status === "draft" && !!r.createdByEmail && r.createdByEmail.toLowerCase() === currentEmail;
+      var canDeleteCard = admin || isMine;
       var card = document.createElement("div");
       card.className = "report-card";
       card.tabIndex = 0;
@@ -2145,7 +2202,7 @@
         submittedLine +
         '<div class="report-card-badge-row"><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></div>' +
         '<button type="button" class="report-card-primary">' + primaryLabel + '</button>' +
-        (admin ? (isDeleted
+        (canDeleteCard ? (isDeleted
           ? '<button type="button" class="report-card-secondary restore">Restore Report</button><button type="button" class="report-card-secondary permanently-delete" style="border-color:#b00020;color:#b00020;">Permanently Delete</button>'
           : '<button type="button" class="report-card-secondary">Delete Report</button>') : '');
 
@@ -2156,7 +2213,7 @@
       var primaryBtn = card.querySelector(".report-card-primary");
       primaryBtn.addEventListener("click", function(e){ e.stopPropagation(); goToCard(); });
 
-      if (admin){
+      if (canDeleteCard){
         var label = r.ship || venueKeyDisplay(r.venueKey) || r.venueKey;
         if (isDeleted){
           var restoreBtn = card.querySelector(".report-card-secondary.restore");
