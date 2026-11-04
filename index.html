@@ -688,7 +688,9 @@
   function isOwner(rec){
     if (!rec) return false;
     if (rec._isNew) return true;
-    return !!rec.createdByEmail && rec.createdByEmail.toLowerCase() === currentEmail;
+    // Handovers saved before ownership tracking have no creator: let the next person who saves claim them.
+    if (!rec.createdByEmail) return true;
+    return rec.createdByEmail.toLowerCase() === currentEmail;
   }
   function canEditDraft(rec){ return currentRole === "admin" || isOwner(rec); }
 
@@ -1124,7 +1126,7 @@
 
   document.getElementById("btn-review-list").addEventListener("click", async function(){
     if (readReviewerAuth()) { window.location.hash = "submitted?filter=in_review"; return; }
-    var password = window.prompt("Enter the shore reviewer password:");
+    var password = window.prompt("Enter the reviewer password:");
     if (password === null || !password) return;
     try {
       await callAccessFunction("reviewer", "", password);
@@ -2013,8 +2015,12 @@
       }
       var toastText = successMessage;
       if (status === "in_review") {
-        try { await callNotifyFunction(currentVenueKey); toastText = "Sent for review — reviewers notified by email"; }
-        catch (notifyErr) { console.error("Review email failed:", notifyErr); toastText = "Sent for review, but the email notification failed"; }
+        // Send the email in the background so the screen never waits on it.
+        var notifyKey = currentVenueKey;
+        var notifyTimeout = new Promise(function(_, reject){ setTimeout(function(){ reject(new Error("Email request timed out.")); }, 20000); });
+        Promise.race([callNotifyFunction(notifyKey), notifyTimeout])
+          .then(function(){ showToast("Reviewers notified by email"); })
+          .catch(function(notifyErr){ console.error("Review email failed:", notifyErr); showToast("Sent for review, but the email notification failed"); });
       }
       showToast(toastText);
       window.location.hash = "submitted?filter=" + encodeURIComponent(filter);
