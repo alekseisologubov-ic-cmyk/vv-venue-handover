@@ -225,6 +225,11 @@
     font-weight:700; font-size:13px; letter-spacing:0.03em; text-transform:uppercase;
     border-radius:20px; padding:8px 18px;
   }
+  button.attachments-upload-btn{ font-family:inherit; }
+  .link-form{ display:none; width:100%; margin-top:10px; padding:12px; border:1px solid #E3D8EA; border-radius:10px; background:#FAF7FC; gap:8px; flex-direction:column; }
+  .link-form input{ font:inherit; font-size:14px; padding:8px 10px; border:1px solid #CDBFD6; border-radius:6px; background:#fff; }
+  .link-form-actions{ display:flex; gap:8px; }
+  .attachment-edit-link{ color:var(--vv-squid-ink) !important; font-weight:400 !important; font-size:12px; }
   .attachments-hint{ font-size:12px; color:var(--vv-gray-mid); }
   .attachments-error{ margin:10px 0 0; font-size:12.5px; color:var(--vv-red-deep); }
   .attachment-row{ font-size:13.5px; padding:6px 0; border-bottom:1px solid #F0EAF4; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
@@ -548,7 +553,16 @@
             <span id="attachments-upload-text">Add photos or files</span>
             <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">
           </label>
+          <button type="button" class="attachments-upload-btn" id="btn-add-link">＋ Add file link</button>
           <span class="attachments-hint" id="attachments-hint">Up to 15 MB per file.</span>
+          <div class="link-form" id="link-form">
+            <input type="text" id="link-name" placeholder="File name (e.g. Galley Cleaning Schedule)" maxlength="150">
+            <input type="url" id="link-url" placeholder="Paste link (SharePoint, OneDrive, Google Drive…)">
+            <div class="link-form-actions">
+              <button type="button" class="attachments-upload-btn" id="btn-link-save">Save link</button>
+              <button type="button" class="attachments-upload-btn" id="btn-link-cancel" style="border-color:#999;color:#666;">Cancel</button>
+            </div>
+          </div>
         </div>
         <p class="attachments-error" id="attachments-error" style="display:none;"></p>
       </section>
@@ -1739,8 +1753,14 @@
                   (f.url && (f.url.indexOf("data:image/") === 0 || f.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)));
       var sizeTxt = formatBytes(f.size);
       var removeLink = locked ? "" : ' · <a href="#" data-remove-idx="' + idx + '" class="attachment-remove-link">remove</a>';
-      
+
       var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
+
+      if (f.kind === "link") {
+        var editLink = locked ? "" : ' · <a href="#" data-edit-link-idx="' + idx + '" class="attachment-edit-link">edit</a>';
+        return '<div class="attachment-row">🔗 <a href="' + escapeHtml(f.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(f.name) + '</a>' +
+          editLink + removeLink + '</div>';
+      }
 
       return '<div class="attachment-row">' + imgPreview + '📎 <a href="#" data-open-main="' + idx + '">' + escapeHtml(f.name) + '</a>' +
         (sizeTxt ? ' <span class="attachment-size">(' + sizeTxt + ')</span>' : '') + removeLink + '<div class="print-attachment-image" data-print-main-idx="' + idx + '"></div></div>';
@@ -1755,6 +1775,26 @@
     schedulePrintImages();
 
     if (!locked){
+      listEl.querySelectorAll("[data-edit-link-idx]").forEach(function(a){
+        a.addEventListener("click", async function(e){
+          e.preventDefault();
+          var idx = parseInt(a.getAttribute("data-edit-link-idx"), 10);
+          var cur = currentAttachments[idx];
+          if (!cur) return;
+          var newName = window.prompt("File name:", cur.name || "");
+          if (newName === null) return;
+          var newUrl = window.prompt("Link:", cur.url || "");
+          if (newUrl === null) return;
+          var checked = normalizeLinkUrl(newUrl);
+          if (!newName.trim() || !checked) { showToast("Enter a name and a valid http/https link"); return; }
+          var updated = currentAttachments.slice();
+          updated[idx] = Object.assign({}, cur, { name: newName.trim(), url: checked });
+          currentAttachments = updated;
+          renderFileListUI(currentAttachments, locked);
+          await persistCurrent({ attachments: currentAttachments });
+          showToast("Link updated");
+        });
+      });
       listEl.querySelectorAll("[data-remove-idx]").forEach(function(a){
         a.addEventListener("click", async function(e){
           e.preventDefault();
@@ -1951,10 +1991,48 @@
     showToast("Saved");
   });
 
+  function normalizeLinkUrl(raw){
+    var u = String(raw || "").trim();
+    if (!u) return "";
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = "https://" + u;
+    try {
+      var parsed = new URL(u);
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+      return parsed.href;
+    } catch (e) { return ""; }
+  }
+
+  (function wireFileLinks(){
+    var form = document.getElementById("link-form");
+    var nameEl = document.getElementById("link-name");
+    var urlEl = document.getElementById("link-url");
+    document.getElementById("btn-add-link").addEventListener("click", function(){
+      form.style.display = form.style.display === "flex" ? "none" : "flex";
+      if (form.style.display === "flex") nameEl.focus();
+    });
+    document.getElementById("btn-link-cancel").addEventListener("click", function(){
+      form.style.display = "none"; nameEl.value = ""; urlEl.value = "";
+    });
+    document.getElementById("btn-link-save").addEventListener("click", async function(){
+      var url = normalizeLinkUrl(urlEl.value);
+      var name = nameEl.value.trim();
+      if (!url) { showToast("Paste a valid http/https link"); return; }
+      if (!name) { try { name = new URL(url).hostname; } catch (e) { name = "File link"; } }
+      var entry = { kind: "link", type: "link", name: name, url: url, size: 0, addedBy: currentEmail || "", addedAt: Date.now() };
+      var list = (currentAttachments || []).concat([entry]);
+      var saved = await persistCurrent({ attachments: list });
+      if (saved) {
+        form.style.display = "none"; nameEl.value = ""; urlEl.value = "";
+        showToast("Link saved");
+      }
+    });
+  })();
+
   function isPrintableImageAttachment(a){
     var type = String((a && a.type) || "").toLowerCase();
     var name = String((a && a.name) || "").toLowerCase();
     var url = String((a && a.url) || "").toLowerCase();
+    if (a && a.kind === "link") return false;
     return type.indexOf("image/") === 0 || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(name) ||
       url.indexOf("data:image/") === 0 || /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i.test(url);
   }
