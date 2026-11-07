@@ -226,6 +226,10 @@
     border-radius:20px; padding:8px 18px;
   }
   button.attachments-upload-btn{ font-family:inherit; }
+  .text-links{ margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+  .text-links:empty{ display:none; margin:0; }
+  .text-link-item{ font-size:12.5px; word-break:break-all; }
+  .text-link-item a{ color:#0B57D0; font-weight:600; text-decoration:underline; }
   .link-form{ display:none; width:100%; margin-top:10px; padding:12px; border:1px solid #E3D8EA; border-radius:10px; background:#FAF7FC; gap:8px; flex-direction:column; }
   .link-form input{ font:inherit; font-size:14px; padding:8px 10px; border:1px solid #CDBFD6; border-radius:6px; background:#fff; }
   .link-form-actions{ display:flex; gap:8px; }
@@ -263,7 +267,8 @@
   .field-attach-chip-remove{
     color:var(--vv-red-deep); cursor:pointer; font-size:11px; background:none; border:none; padding:0; font-family:inherit;
   }
-  .field-attach-row{ display:flex; justify-content:flex-end; margin-top:6px; }
+  .field-attach-row{ display:flex; justify-content:flex-end; gap:6px; margin-top:6px; }
+  button.field-link-btn{ font-family:inherit; padding:0; }
   .field-attach-btn{
     display:inline-flex; align-items:center; justify-content:center;
     width:26px; height:26px; border-radius:50%; background:#F5F1F7; color:var(--vv-squid-ink);
@@ -576,6 +581,7 @@
             📎
             <input type="file" class="field-attach-input" data-attach-field="generalcomment" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">
           </label>
+          <button type="button" class="field-attach-btn field-link-btn" data-link-field="generalcomment" title="Add a link to this item">🔗</button>
         </div>
       </section>
 
@@ -1195,6 +1201,7 @@
               '📎' +
               '<input type="file" class="field-attach-input" data-attach-field="' + f.id + '" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">' +
             '</label>' +
+            '<button type="button" class="field-attach-btn field-link-btn" data-link-field="' + f.id + '" title="Add a link to this item">🔗</button>' +
           '</div>' +
           '</div>';
       });
@@ -1336,7 +1343,34 @@
   function autoGrowAllTextareas(){
     document.querySelectorAll("#handover-fieldset textarea").forEach(autoGrowTextarea);
     autoGrowTextarea(document.getElementById("f-reviewer-comments"));
+    refreshTextLinks();
   }
+
+  // Web addresses typed into a text box are shown as clickable links just below it
+  // (a text box itself cannot hold a clickable link, especially when it is read-only).
+  function refreshTextLinks(){
+    var boxes = Array.prototype.slice.call(document.querySelectorAll("#handover-fieldset textarea"));
+    var rc = document.getElementById("f-reviewer-comments");
+    if (rc) boxes.push(rc);
+    boxes.forEach(function(ta){
+      var holder = ta.nextElementSibling;
+      if (!holder || !holder.classList || !holder.classList.contains("text-links")) {
+        holder = document.createElement("div");
+        holder.className = "text-links";
+        ta.parentNode.insertBefore(holder, ta.nextSibling);
+      }
+      var seen = {};
+      var urls = (String(ta.value || "").match(/https?:\/\/[^\s<>"']+/gi) || []).map(function(u){
+        return u.replace(/[.,;:!?)\]]+$/, "");
+      }).filter(function(u){ if (seen[u]) return false; seen[u] = true; return true; });
+      holder.innerHTML = urls.map(function(u){
+        var label = u.length > 70 ? u.slice(0, 67) + "…" : u;
+        return '<div class="text-link-item">🔗 <a href="' + u.replace(/"/g, "%22") + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label) + '</a></div>';
+      }).join("");
+    });
+  }
+  var textLinksTimer = null;
+  function scheduleTextLinks(){ clearTimeout(textLinksTimer); textLinksTimer = setTimeout(refreshTextLinks, 400); }
 
   function applyRecordToForm(venueKey, rec){
     updateVenueToggleLabel(venueKey);
@@ -1480,6 +1514,10 @@
       
       var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
 
+      if (a.kind === "link") {
+        return '<div class="field-attach-chip">🔗 <a href="' + escapeHtml(a.url).replace(/"/g, "%22") + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
+      }
+
       return '<div class="field-attach-chip">' + imgPreview + '📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '<div class="print-attachment-image" data-print-field="' + escapeHtml(fieldId) + '" data-print-idx="' + idx + '"></div></div>';
     }).join("");
 
@@ -1547,6 +1585,26 @@
     var label = input.closest(".field-attach-btn");
     handleFieldFileSelected(fieldId, input.files, label);
     input.value = "";
+  });
+  document.addEventListener("click", async function(e){
+    var lb = e.target.closest && e.target.closest(".field-link-btn");
+    if (!lb) return;
+    var fieldId = lb.getAttribute("data-link-field");
+    var rawUrl = window.prompt("Paste the link (SharePoint, OneDrive, Google Drive, or any web address):");
+    if (rawUrl === null) return;
+    var url = normalizeLinkUrl(rawUrl);
+    if (!url) { showToast("Paste a valid http/https link"); return; }
+    var name = window.prompt("Name to show for this link (optional):", "");
+    if (name === null) return;
+    name = name.trim();
+    if (!name) { try { name = new URL(url).hostname; } catch (err) { name = "Link"; } }
+    var entry = { kind: "link", type: "link", name: name, url: url, size: 0, addedBy: currentEmail || "", addedAt: Date.now() };
+    var next = Object.assign({}, currentFieldAttachments);
+    next[fieldId] = (next[fieldId] || []).concat([entry]);
+    currentFieldAttachments = next;
+    renderFieldAttachmentChips(fieldId, false);
+    var saved = await persistCurrent({ fieldAttachments: next });
+    showToast(saved ? "Link saved" : "Link not saved");
   });
   document.getElementById("handover-fieldset").addEventListener("click", function(e){
     var btn = e.target.closest(".field-attach-chip-remove");
@@ -1975,7 +2033,7 @@
   }
 
   document.getElementById("handover-fieldset").addEventListener("input", function(e){
-    if (e.target && e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
+    if (e.target && e.target.tagName === "TEXTAREA") { autoGrowTextarea(e.target); scheduleTextLinks(); }
     scheduleSave();
   });
   document.getElementById("handover-fieldset").addEventListener("change", function(e){
