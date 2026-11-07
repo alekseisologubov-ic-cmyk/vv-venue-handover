@@ -1961,13 +1961,23 @@
 
   async function getAttachmentPrintUrl(a){
     if (!a || !isPrintableImageAttachment(a)) return "";
-    if (a.url) return a.url;
+    var direct = a.url || "";
+    // Same source the file viewer uses: a fresh signed link from storage (saved links may be expired).
     if (SUPABASE_CONFIGURED && a.path && sb){
-      var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 300);
-      if (!signed.error && signed.data && signed.data.signedUrl) return signed.data.signedUrl;
-      console.warn("Could not prepare image for PDF:", a.name, signed.error);
+      try {
+        var signed = await sb.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(a.path, 600);
+        if (!signed.error && signed.data && signed.data.signedUrl) {
+          // Download the picture into the page so it is guaranteed to be there when printing.
+          try {
+            var resp = await fetch(signed.data.signedUrl);
+            if (resp.ok) return URL.createObjectURL(await resp.blob());
+          } catch (fetchErr) { console.warn("Image download for PDF failed, using link:", a.name, fetchErr); }
+          return signed.data.signedUrl;
+        }
+        console.warn("Could not prepare image for PDF:", a.name, signed.error);
+      } catch (err) { console.warn("Signed URL error for PDF image:", a.name, err); }
     }
-    return "";
+    return direct;
   }
 
   async function prepareAttachmentImagesForPrint(){
