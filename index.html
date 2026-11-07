@@ -384,7 +384,8 @@
 
   /* Image attachments appear as pictures in printed/PDF reports; non-image files remain names. */
   .print-attachment-image { display:none; }
-  .print-attachment-image img { display:block; max-width:180px; max-height:125px; width:auto; height:auto; object-fit:contain; border:1px solid #ddd; border-radius:4px; margin:6px 0 8px; }
+  .print-attachment-image img { display:block; max-width:100%; max-height:560px; width:auto; height:auto; object-fit:contain; border:1px solid #ddd; border-radius:4px; margin:6px 0 10px; page-break-inside:avoid; break-inside:avoid; }
+  .print-attachment-image { page-break-inside:avoid; break-inside:avoid; }
   @media print {
     .print-attachment-image { display:block !important; }
     body { background: #fff !important; color: #000 !important; }
@@ -1476,7 +1477,23 @@
         openAttachmentModal((currentFieldAttachments[fid] || [])[idx]);
       });
     });
+    schedulePrintImages();
   }
+
+  // Load the (print-only) photos as soon as a report is shown, so Ctrl+P and
+  // "Save as PDF" both include them, not only the Save as PDF button.
+  var printImagesTimer = null;
+  function schedulePrintImages(){
+    clearTimeout(printImagesTimer);
+    printImagesTimer = setTimeout(function(){
+      prepareAttachmentImagesForPrint().catch(function(err){ console.warn("Print image preparation failed:", err); });
+    }, 600);
+  }
+  window.addEventListener("beforeprint", function(){
+    // Images are normally loaded already; this only fills any that are still missing.
+    var missing = Array.prototype.some.call(document.querySelectorAll(".print-attachment-image"), function(el){ return !el.firstChild; });
+    if (missing) prepareAttachmentImagesForPrint().catch(function(){});
+  });
 
   async function handleFieldFileSelected(fieldId, fileList, triggerEl){
     var files = Array.from(fileList || []);
@@ -1735,6 +1752,7 @@
         openAttachmentModal(currentAttachments[parseInt(a.getAttribute("data-open-main"), 10)]);
       });
     });
+    schedulePrintImages();
 
     if (!locked){
       listEl.querySelectorAll("[data-remove-idx]").forEach(function(a){
