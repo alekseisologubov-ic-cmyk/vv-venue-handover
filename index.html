@@ -902,7 +902,14 @@
     if (!res.data || !res.data.length) throw new Error("The database did not allow this change (no permission, or the handover no longer exists).");
     return true;
   }
-  async function softDeleteRecord(venueKey){ return setDeletedFlag(venueKey, new Date().toISOString()); }
+  async function softDeleteRecord(venueKey){
+    if (currentRole === "admin") return setDeletedFlag(venueKey, new Date().toISOString());
+    // Everyone else deletes through a database function that checks the handover is their own open draft.
+    if (!SUPABASE_CONFIGURED) throw new Error("Secure cloud storage is required.");
+    var res = await sb.rpc("vh_soft_delete_handover", { p_id: venueKey, p_email: currentEmail || "" });
+    if (res.error) throw new Error(res.error.message || "Delete failed.");
+    return true;
+  }
   async function restoreRecord(venueKey){ return setDeletedFlag(venueKey, null); }
 
   // Hard deletion is deliberately limited to records already soft-deleted by an admin.
