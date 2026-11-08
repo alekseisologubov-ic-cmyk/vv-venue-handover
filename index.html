@@ -246,6 +246,7 @@
   .section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
   .section-num{ font-family: Poppins, 'Segoe UI', Arial, sans-serif; font-weight:800; font-size:30px; color:var(--vv-red-deep); line-height:1; min-width:44px; }
   .section-title{ font-family: Poppins, 'Segoe UI', Arial, sans-serif; font-weight:800; font-size:19px; color:var(--vv-ink); text-transform:uppercase; }
+  .cards-grid.single{ grid-template-columns:1fr; }
   .section-rule{ border:none;border-top:1px solid #000; opacity:0.15; margin:0 0 14px; }
   .cards-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:14px; }
   .card{ background:var(--vv-white); border-radius:10px; padding:16px 18px 18px; box-shadow:0 2px 10px rgba(60,16,83,0.07); display:flex; flex-direction:column; }
@@ -695,6 +696,43 @@
       {id:"ktmatrix", label:"KT Matrix / Support & KT Special Events"} ]}
   ];
 
+  // Culinary Admin handover: shown instead of the standard points when the
+  // outgoing or incoming position is "Culinary Admin". Based on the Culinary Admin Playbook.
+  var ADMIN_POSITION = "Culinary Admin";
+  var ADMIN_SECTIONS = [
+    { num:"01", title:"Crew Movements & Manning", single:true, fields:[
+      {id:"ca_manning", label:"Crew Movements, Manning Forecast & Succession Plan",
+       hint:"Current culinary manning file and where it is saved; latest crew manifest received; sign-ons / sign-offs this and next voyage; station shortages and changes; succession plan status; Apollo reports used (Crew Movement, Budget vs Actual, Crew Rotation); MXP employee ID and station checks."} ]},
+    { num:"02", title:"Time & Attendance, Schedules & ILO", single:true, fields:[
+      {id:"ca_timeatt", label:"MXP Time & Attendance, Schedules and ILO Violations",
+       hint:"Unapproved hours or punches still open and which leaders were told (approval deadline 1:00 pm); adjustments pending; schedules still to be entered for the month; medical off duty / isolation entries; ILO violation report status and anything reported to the Sr Executive Chef."} ]},
+    { num:"03", title:"Overtime / Undertime Report", single:true, fields:[
+      {id:"ca_overtime", label:"Overtime & Undertime Report",
+       hint:"Latest payroll OT/UT report and where it is saved; whether it was sorted and sent to each station leader; station list and executive chef in charge up to date; stations or crew with repeated overtime; follow-ups still open."} ]},
+    { num:"04", title:"Training Tracker & Attendance Sheets", single:true, fields:[
+      {id:"ca_training", label:"Training Tracker, Calendars and Response Sheets",
+       hint:"Status of the culinary training checklist, training links and response sheets; Galley Fire Safety, Public Health and Departmental Safety (VMS-103-1) calendars: what is scheduled, invites sent, what is outstanding; stations missing trainings; e-learning completion for cooks and who needs a reminder; Rouxbe groups, grading and scorecards."} ]},
+    { num:"05", title:"Cabin Berthing & Allocation", single:true, fields:[
+      {id:"ca_cabins", label:"Cabin Berthing, Allocation, Changes and Requests",
+       hint:"Cabin allocation / berthing file and cabin change file status; cabins for embarking crew assigned or still to do; waiting list; couple cabin requests (linked couples only); crew cabin complaints and how they were handled; cabin checks before sign-off and re-inspections of failed cabins."} ]},
+    { num:"06", title:"Embarkation Day Duties", single:true, fields:[
+      {id:"ca_embark", label:"Embarkation Day Tasks, New Hires and Sign-On Package",
+       hint:"Embarkation duties assigned by Crew Services (terminal or gangway); sign-on package items and training form links; new hires and assigned shipmates; Workvivo and Elevate access checked; manning, cabin sheet, MXP employee ID, Elevate hierarchy and OT report station list updated for embarking crew; meeting with the executive chefs."} ]},
+    { num:"07", title:"Public Health, Inspections & Records", single:true, fields:[
+      {id:"ca_inspections", label:"USPH / Food Safety Inspections, Cabin Inspections and Records",
+       hint:"Next USPH or port inspection and briefing plan; Food Safety Inspection form and response sheet findings still open; thermometer calibration, fridge and cooling logs printed and retention kept; Integrated Pest Management trap checks; deck-by-deck inspection schedule; Look Sea cabin inspection and night shift tracker; meal count and missing items list for the current voyage."} ]},
+    { num:"08", title:"Devices, Laptops & Tablets", single:true, fields:[
+      {id:"ca_devices", label:"Crew Devices, Recipe Tablets and Laptops",
+       hint:"Crew devices file up to date for sign-ons and sign-offs; recipe tablets and laptops matched to the current station leader; damaged or lost devices (AIMS entry, photo, Google Form, IT office inspection); devices still to be returned or released; Open AIMS items for cabins and culinary equipment."} ]},
+    { num:"09", title:"Meetings, Notes & Reminders", single:true, fields:[
+      {id:"ca_meetings", label:"Meetings, Meeting Notes, Announcements and Reminders to Leaders",
+       hint:"Culinary Leadership, daily executives, crew champions, departmental safety and fleet calls: dates and what you own in each; meeting and tasting notes shared with leaders; announcements still to be posted; IPM swap requests and Embarkation Supervisor alerts or visitor entries pending; birthdays, cake requests and culinary gatherings; upcoming end-of-contract appraisals and goal settings."} ]},
+    { num:"10", title:"Systems, Key Files & Open Items", single:true, fields:[
+      {id:"ca_systems", label:"Systems Access, Key File Locations and Open / Urgent Items",
+       hint:"Where the key files live (Google Drive folders, shared drives, Handover Notes folder, VMS documents) and who has access; systems you use (MXP, Apollo, Elevate, AIMS, Rouxbe, VMS, Workvivo, ERP, Embarkation Supervisor) and how the new admin gets credentials; recurring deadlines; urgent, time-sensitive and routine items still open. Do not write passwords here."} ]}
+  ];
+  var ALL_SECTIONS = SECTIONS.concat(ADMIN_SECTIONS);
+
   var STORAGE_KEY = "vv-venue-handovers-v1";
   var currentUser = null;
   var currentRole = null;
@@ -893,7 +931,7 @@
 
   function emptyFields(){
     var out = {};
-    SECTIONS.forEach(function(s){ s.fields.forEach(function(f){ out[f.id] = ""; }); });
+    ALL_SECTIONS.forEach(function(s){ s.fields.forEach(function(f){ out[f.id] = ""; }); });
     return out;
   }
   function emptyRecord(){
@@ -1188,13 +1226,13 @@
     sections.forEach(function(s){
       html += '<div class="section-wrap">' +
         '<div class="section-head"><span class="section-num">' + s.num + '</span><span class="section-title">' + s.title + '</span></div>' +
-        '<hr class="section-rule"><div class="cards-grid">';
+        '<hr class="section-rule"><div class="cards-grid' + (s.single ? ' single' : '') + '">';
       s.fields.forEach(function(f){
         counter++;
         var accent = (counter % 2 === 1) ? "main" : "alt";
         html += '<div class="card ' + accent + '">' +
           '<div class="field-label"><span class="dash">—</span>' + f.label + '</div>' +
-          '<textarea data-field-id="' + f.id + '" placeholder="Click here to enter text."></textarea>' +
+          '<textarea data-field-id="' + f.id + '" placeholder="' + String(f.hint || "Click here to enter text.").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;") + '"></textarea>' +
           '<div class="field-attach-chips" data-attach-list="' + f.id + '"></div>' +
           '<div class="field-attach-row">' +
             '<label class="field-attach-btn" title="Attach a photo or file to this item">' +
@@ -1210,12 +1248,40 @@
     return { html: html, counter: counter };
   }
 
-  (function initSections(){
-    var top = buildSectionHTML(SECTIONS.slice(0,3), 0);
+  var renderedMode = "";
+  var fieldMemory = {};
+  function templateModeFor(outPos, inPos){
+    return (outPos === ADMIN_POSITION || inPos === ADMIN_POSITION) ? "admin" : "standard";
+  }
+  function renderSections(mode){
+    var list = mode === "admin" ? ADMIN_SECTIONS : SECTIONS;
+    var top = buildSectionHTML(list.slice(0,3), 0);
     document.getElementById("sections-top").innerHTML = top.html;
-    var bottom = buildSectionHTML(SECTIONS.slice(3), top.counter);
+    var bottom = buildSectionHTML(list.slice(3), top.counter);
     document.getElementById("sections-bottom").innerHTML = bottom.html;
-  })();
+    renderedMode = mode;
+  }
+  renderSections("standard");
+
+  // When the position changes to/from Culinary Admin, swap the set of points.
+  // Text already typed is kept in memory so nothing is lost if the position is changed back.
+  function switchTemplateIfNeeded(){
+    var mode = templateModeFor(document.getElementById("f-outgoing-pos").value, document.getElementById("f-incoming-pos").value);
+    if (mode === renderedMode) return false;
+    document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){ fieldMemory[ta.getAttribute("data-field-id")] = ta.value; });
+    renderSections(mode);
+    document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
+      ta.value = fieldMemory[ta.getAttribute("data-field-id")] || "";
+    });
+    document.querySelectorAll(".field-attach-chips").forEach(function(el){
+      renderFieldAttachmentChips(el.getAttribute("data-attach-list"), false);
+    });
+    document.querySelectorAll(".field-attach-row").forEach(function(el){ el.style.display = "flex"; });
+    autoGrowAllTextareas();
+    return true;
+  }
+  document.getElementById("f-outgoing-pos").addEventListener("change", switchTemplateIfNeeded);
+  document.getElementById("f-incoming-pos").addEventListener("change", switchTemplateIfNeeded);
 
   function slugToLabel(slug, list){
     var found = list.filter(function(n){ return slugify(n) === slug; })[0];
@@ -1384,6 +1450,9 @@
     document.getElementById("f-outgoing-pos").value = rec.outgoingPos || "";
     document.getElementById("f-incoming-name").value = rec.incomingName || "";
     document.getElementById("f-incoming-pos").value = rec.incomingPos || "";
+    fieldMemory = Object.assign({}, rec.fields || {});
+    var recMode = templateModeFor(rec.outgoingPos || "", rec.incomingPos || "");
+    if (recMode !== renderedMode) renderSections(recMode);
     document.getElementById("f-date").value = rec.date || "";
     document.getElementById("f-reviewer-comments").value = rec.reviewerComments || "";
     document.getElementById("footer-date").textContent = formatDateDisplay(rec.date) || "—";
@@ -1992,6 +2061,8 @@
     var venueKey = currentVenueKey;
     var existing = await fetchHandoverRecord(venueKey);
     var vals = currentFormValues();
+    // Keep text from the other set of points (standard / Culinary Admin) that is not on screen.
+    vals.fields = Object.assign({}, existing.fields || {}, fieldMemory, vals.fields);
     if (!existing._isNew && existing.status === "draft" && !canEditDraft(existing)) {
       showToast("You can only edit handovers you started");
       return null;
