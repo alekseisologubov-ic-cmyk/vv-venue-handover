@@ -892,18 +892,18 @@
     return false;
   }
 
-  async function softDeleteRecord(venueKey){
-    var rec = await fetchHandoverRecord(venueKey);
-    rec.deletedAt = new Date().toISOString();
-    await saveRecord(venueKey, rec);
+  // Marks / unmarks a handover as deleted with a small direct update, and checks the database
+  // really changed a row (a blocked change would otherwise fail silently).
+  async function setDeletedFlag(venueKey, deletedAt){
+    if (!SUPABASE_CONFIGURED) throw new Error("Secure cloud storage is required.");
+    var now = new Date().toISOString();
+    var res = await sb.from("handovers").update({ deleted_at: deletedAt, updated_at: now }).eq("id", venueKey).select("id");
+    if (res.error) throw new Error([res.error.message, res.error.details, res.error.hint].filter(Boolean).join(" | "));
+    if (!res.data || !res.data.length) throw new Error("The database did not allow this change (no permission, or the handover no longer exists).");
     return true;
   }
-  async function restoreRecord(venueKey){
-    var rec = await fetchHandoverRecord(venueKey);
-    rec.deletedAt = null;
-    await saveRecord(venueKey, rec);
-    return true;
-  }
+  async function softDeleteRecord(venueKey){ return setDeletedFlag(venueKey, new Date().toISOString()); }
+  async function restoreRecord(venueKey){ return setDeletedFlag(venueKey, null); }
 
   // Hard deletion is deliberately limited to records already soft-deleted by an admin.
   async function permanentlyDeleteRecord(venueKey){
@@ -2337,14 +2337,16 @@
     if (isCurrentlyDeleted){
       btn.disabled = true;
       btn.textContent = "Restoring…";
-      await restoreRecord(currentVenueKey);
+      try { await restoreRecord(currentVenueKey); }
+      catch (err) { window.alert("Could not restore the handover: " + (err.message || err)); btn.disabled = false; btn.textContent = "Restore handover"; return; }
       renderHandover(currentVenueKey);
       return;
     }
     if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
     btn.disabled = true;
     btn.textContent = "Deleting…";
-    await softDeleteRecord(currentVenueKey);
+    try { await softDeleteRecord(currentVenueKey); }
+    catch (err) { window.alert("Could not delete the handover: " + (err.message || err)); btn.disabled = false; btn.textContent = "Delete handover"; return; }
     window.location.hash = "home";
   });
   document.getElementById("handover-back").addEventListener("click", function(){
@@ -2481,7 +2483,8 @@
             if (!window.confirm('Delete the handover for "' + label + '"? An admin can restore it later from Manage Venues.')) return;
             delBtn.disabled = true;
             delBtn.textContent = "Deleting…";
-            await softDeleteRecord(r.venueKey);
+            try { await softDeleteRecord(r.venueKey); }
+            catch (err) { window.alert("Could not delete the handover: " + (err.message || err)); delBtn.disabled = false; delBtn.textContent = "Delete Report"; return; }
             renderSubmitted(filter);
           });
         }
