@@ -505,6 +505,7 @@
       <button class="btn-sendback" id="btn-send-back-handover" style="display:none;">Send back to open</button>
       <button class="btn-approve" id="btn-submit-handover" style="display:none;">Approve &amp; Submit</button>
       <button class="btn-outline" id="btn-reopen-handover" style="display:none;">Reopen as draft</button>
+      <button class="btn-outline" id="btn-save-drive" style="display:none;">Save to Drive</button>
       <span class="locked-note" id="locked-note" style="display:none;"></span>
       <button type="button" class="list-row-delete" id="btn-delete-handover" style="display:none;">Delete handover</button>
     </div>
@@ -986,6 +987,28 @@
       var p = await response.json().catch(function(){ return {}; });
       throw new Error(p.error || "Notification failed.");
     }
+  }
+
+  // Files a submitted handover into the Culinary Drive (Handover / Ship / Position) as a PDF.
+  async function callDriveFunction(venueKey){
+    var session = (await sb.auth.getSession()).data.session;
+    if (!session) throw new Error("Session not ready.");
+    var response = await fetch(SUPABASE_URL + "/functions/v1/vh-save-to-drive", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
+      body:JSON.stringify({ venueKey: venueKey })
+    });
+    var payload = await response.json().catch(function(){ return {}; });
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "Saving to Drive failed.");
+    return payload;
+  }
+  function saveToDriveInBackground(venueKey){
+    callDriveFunction(venueKey)
+      .then(function(r){ showToast("Saved to Culinary Drive" + (r.path ? " — " + r.path : "")); })
+      .catch(function(err){
+        console.error("Save to Drive failed:", err);
+        showToast("Submitted, but saving to the Drive failed — open it and press Save to Drive");
+      });
   }
 
   async function loadCurrentRole(user){
@@ -1515,6 +1538,7 @@
 
     pdfBtn.style.display = (rec.status === "submitted" || rec.status === "in_review") ? "inline-block" : "none";
 
+    document.getElementById("btn-save-drive").style.display = "none";
     if (rec.status === "draft") {
       sendReviewBtn.style.display = notMine ? "none" : "inline-block";
       sendBackBtn.style.display = "none";
@@ -1541,6 +1565,7 @@
       sendReviewBtn.style.display = "none";
       sendBackBtn.style.display = "none";
       submitBtn.style.display = "none";
+      document.getElementById("btn-save-drive").style.display = reviewerOk ? "inline-block" : "none";
       if (admin){
         reopenBtn.style.display = "inline-block";
         lockedNote.style.display = "none";
@@ -2324,12 +2349,25 @@
         value.textContent = approverName + " — " + approverPosition;
       }
       showToast("Approved and submitted");
+      saveToDriveInBackground(currentVenueKey);
       window.location.hash = "submitted?filter=submitted";
     } catch (err) {
       console.error("Handover approval failed:", err);
       setSyncStatus("error");
       window.alert("Approval failed. This handover was NOT moved to Submitted.\n\n" + (err && err.message ? err.message : err));
     }
+  });
+
+  document.getElementById("btn-save-drive").addEventListener("click", async function(){
+    var btn = document.getElementById("btn-save-drive");
+    btn.disabled = true; btn.textContent = "Saving to Drive…";
+    try {
+      var r = await callDriveFunction(currentVenueKey);
+      showToast("Saved to Culinary Drive" + (r.path ? " — " + r.path : ""));
+    } catch (err) {
+      window.alert("Could not save to the Drive: " + (err && err.message ? err.message : err));
+    }
+    btn.disabled = false; btn.textContent = "Save to Drive";
   });
 
   document.getElementById("btn-reopen-handover").addEventListener("click", async function(){
