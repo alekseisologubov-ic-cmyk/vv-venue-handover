@@ -989,11 +989,13 @@
     }
   }
 
+  // Web address name of the Supabase function that saves to the Drive (see the function's Overview page, "Endpoint URL").
+  var DRIVE_FUNCTION_SLUG = "bright-endpoint";
   // Files a submitted handover into the Culinary Drive (Handover / Ship / Position) as a PDF.
   async function callDriveFunction(venueKey){
     var session = (await sb.auth.getSession()).data.session;
     if (!session) throw new Error("Session not ready.");
-    var response = await fetch(SUPABASE_URL + "/functions/v1/vh-save-to-drive", {
+    var response = await fetch(SUPABASE_URL + "/functions/v1/" + DRIVE_FUNCTION_SLUG, {
       method:"POST",
       headers:{"Content-Type":"application/json", "Authorization":"Bearer " + session.access_token, "apikey":SUPABASE_ANON_KEY},
       body:JSON.stringify({ venueKey: venueKey })
