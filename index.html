@@ -1290,6 +1290,7 @@
               '<input type="file" class="field-attach-input" data-attach-field="' + f.id + '" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style="display:none;">' +
             '</label>' +
             '<button type="button" class="field-attach-btn field-link-btn" data-link-field="' + f.id + '" title="Add a link to this item">🔗</button>' +
+            '<button type="button" class="field-attach-btn field-clear-btn" data-clear-field="' + f.id + '" title="Clear the text in this box">🗑</button>' +
           '</div>' +
           '</div>';
       });
@@ -1802,6 +1803,19 @@
     var label = input.closest(".field-attach-btn");
     handleFieldFileSelected(fieldId, input.files, label);
     input.value = "";
+  });
+  document.addEventListener("click", function(e){
+    var cb = e.target.closest && e.target.closest(".field-clear-btn");
+    if (!cb) return;
+    var card = cb.closest(".card");
+    var ta = card && card.querySelector("textarea");
+    if (!ta || ta.disabled || ta.readOnly) return;
+    if (!ta.value.trim()) return;
+    if (!window.confirm("Clear all text in this box?")) return;
+    ta.value = "";
+    autoGrowTextarea(ta);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    showToast("Text cleared");
   });
   document.addEventListener("click", async function(e){
     var lb = e.target.closest && e.target.closest(".field-link-btn");
