@@ -1262,6 +1262,7 @@
   var saveTimer = null;
   var currentChannel = null;
   var skipNextRealtime = false;
+  var lastLocalEdit = 0, saveInFlight = 0;
 
   function unsubscribeCurrentChannel(){
     if (currentChannel && sb){
@@ -1601,7 +1602,8 @@
     var recMode = templateModeFor(rec.outgoingPos || "", rec.incomingPos || "");
     if (recMode !== renderedMode) renderSections(recMode);
     document.getElementById("f-date").value = rec.date || "";
-    document.getElementById("f-reviewer-comments").value = rec.reviewerComments || "";
+    var rcEl = document.getElementById("f-reviewer-comments");
+    if (rcEl !== document.activeElement && rcEl.value !== (rec.reviewerComments || "")) rcEl.value = rec.reviewerComments || "";
     document.getElementById("footer-date").textContent = formatDateDisplay(rec.date) || "—";
     document.getElementById("handover-title").textContent = shipValue || "Venue Handover";
 
@@ -1627,7 +1629,9 @@
     }
     document.querySelectorAll("textarea[data-field-id]").forEach(function(ta){
       var id = ta.getAttribute("data-field-id");
-      ta.value = (rec.fields && rec.fields[id]) || "";
+      var nv = (rec.fields && rec.fields[id]) || "";
+      if (ta === document.activeElement || ta.value === nv) return;
+      ta.value = nv;
     });
 
     var admin = readAdmin();
@@ -2184,7 +2188,15 @@
           function(payload){
             if (skipNextRealtime){ skipNextRealtime = false; return; }
             if (!payload.new) return;
-            applyRecordToForm(venueKey, rowToRecord(payload.new));
+            // Never overwrite what this person is typing: ignore echoes of our own saves.
+            if (saveInFlight > 0 || (Date.now() - lastLocalEdit) < 10000) return;
+            var incoming = rowToRecord(payload.new);
+            try {
+              var cur = currentFormValues().fields, inc = incoming.fields || {}, same = true;
+              Object.keys(cur).forEach(function(k){ if ((cur[k] || "") !== (inc[k] || "")) same = false; });
+              if (same && (document.getElementById("f-reviewer-comments").value || "") === (incoming.reviewerComments || "")) return;
+            } catch (err) {}
+            applyRecordToForm(venueKey, incoming);
           }
         )
         .subscribe();
@@ -2241,7 +2253,9 @@
 
     var next = Object.assign({}, existing, vals, overrides || {}, { attachments: attachments, createdByEmail: existing.createdByEmail || currentEmail, updatedAt: Date.now() });
     if (SUPABASE_CONFIGURED) skipNextRealtime = true;
-    var ok = await saveRecord(venueKey, next);
+    saveInFlight++;
+    var ok;
+    try { ok = await saveRecord(venueKey, next); } finally { saveInFlight--; }
 
     if (!ok){
       setSyncStatus("error");
@@ -2260,6 +2274,7 @@
   }
 
   function scheduleSave(){
+    lastLocalEdit = Date.now();
     setSyncStatus("saving");
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async function(){ try { var saved = await persistCurrent(); if (saved) showToast("Saved"); } catch (err) { console.error("Auto-save failed:", err); setSyncStatus("error"); } }, 500);
