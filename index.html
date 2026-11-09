@@ -306,25 +306,30 @@
   .list-card{ background:var(--vv-white); border-radius:10px; box-shadow:0 1px 3px rgba(20,10,30,0.08); overflow:hidden; }
 
   /* report cards (Open/In Review/Submitted/Manage lists) */
-  .report-list{ display:flex; flex-direction:column; gap:16px; }
+  .report-list{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; align-items:start; }
+  @media (max-width:1280px){ .report-list{ grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width:900px){ .report-list{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:560px){ .report-list{ grid-template-columns:1fr; } }
   .report-card{
     background:var(--vv-white); border-radius:10px; box-shadow:0 1px 3px rgba(20,10,30,0.08);
-    padding:20px 22px; cursor:pointer; text-align:left; border:none; width:100%; font-family:inherit;
+    padding:12px 14px; cursor:pointer; text-align:left; border:none; width:100%; font-family:inherit; min-width:0;
   }
-  .report-card-title{ font-weight:800; font-size:19px; color:var(--vv-squid-ink); margin-bottom:10px; }
-  .report-card-line{ font-size:14px; color:var(--vv-body-text); margin-bottom:4px; }
+  .report-card-title{ font-weight:800; font-size:15px; color:var(--vv-squid-ink); margin-bottom:6px; line-height:1.2; }
+  .report-card-line{ font-size:12px; line-height:1.3; color:var(--vv-body-text); margin-bottom:3px; overflow-wrap:anywhere; }
+  .report-card-meta{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin:6px 0 8px; }
+  .report-card-meta .report-card-line{ margin:0; }
   .report-card-line strong{ color:var(--vv-ink); }
-  .report-card-badge-row{ margin:10px 0 14px; }
+  .report-card-badge-row{ margin:0; }
   .report-card-primary{
     display:block; width:100%; border:none; background:var(--vv-red); color:#fff;
-    font-weight:800; font-size:14px; letter-spacing:0.03em; text-transform:uppercase;
-    border-radius:8px; padding:12px; cursor:pointer; margin-bottom:8px;
+    font-weight:800; font-size:12px; letter-spacing:0.03em; text-transform:uppercase;
+    border-radius:6px; padding:7px; cursor:pointer; margin-bottom:6px;
   }
   .report-card-primary:hover{ background:var(--vv-red-light); }
   .report-card-secondary{
     display:block; width:100%; border:1px solid var(--vv-red); background:#fff; color:var(--vv-red);
-    font-weight:800; font-size:13px; letter-spacing:0.03em; text-transform:uppercase;
-    border-radius:8px; padding:10px; cursor:pointer;
+    font-weight:800; font-size:11px; letter-spacing:0.03em; text-transform:uppercase;
+    border-radius:6px; padding:6px; cursor:pointer; margin-top:4px;
   }
   .report-card-secondary:hover{ background:var(--vv-red); color:#fff; }
   .report-card-secondary.restore{ border-color:#1E7A3A; color:#1E7A3A; }
@@ -2595,10 +2600,11 @@
 
       card.innerHTML =
         '<div class="report-card-title">' + title + '</div>' +
-        '<div class="report-card-line"><strong>From \u2192 To:</strong> ' + (escapeHtml(r.outgoing) || "—") + ' \u2192 ' + (escapeHtml(r.incoming) || "—") + '</div>' +
-        '<div class="report-card-line"><strong>Date:</strong> ' + (formatDateDisplay(r.date) || "—") + '</div>' +
+        '<div class="report-card-line"><strong>From:</strong> ' + (escapeHtml(r.outgoing) || "—") + '</div>' +
+        '<div class="report-card-line"><strong>To:</strong> ' + (escapeHtml(r.incoming) || "—") + '</div>' +
         submittedLine +
-        '<div class="report-card-badge-row"><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></div>' +
+        '<div class="report-card-meta"><div class="report-card-line"><strong>Date:</strong> ' + (formatDateDisplay(r.date) || "—") + '</div>' +
+        '<div class="report-card-badge-row"><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></div></div>' +
         '<button type="button" class="report-card-primary">' + primaryLabel + '</button>' +
         (canDeleteCard ? (isDeleted
           ? '<button type="button" class="report-card-secondary restore">Restore Report</button><button type="button" class="report-card-secondary permanently-delete" style="border-color:#b00020;color:#b00020;">Permanently Delete</button>'
