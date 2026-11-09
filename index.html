@@ -232,6 +232,12 @@
     border-radius:20px; padding:8px 18px;
   }
   button.attachments-upload-btn{ font-family:inherit; }
+  .comment-tools{ margin-top:6px; display:flex; flex-direction:column; gap:4px; }
+  .comment-tools:empty{ display:none; margin:0; }
+  .comment-tool-row{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--vv-gray-mid); }
+  .comment-tool-row .ct-text{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .comment-tool-row button{ font:inherit; font-size:12px; font-weight:700; color:var(--vv-red); background:none; border:1px solid var(--vv-red); border-radius:999px; padding:2px 10px; cursor:pointer; }
+  .comment-tool-row button:hover{ background:var(--vv-red); color:#fff; }
   .text-links{ margin-top:6px; display:flex; flex-direction:column; gap:3px; }
   .text-links:empty{ display:none; margin:0; }
   .text-link-item{ font-size:12.5px; word-break:break-all; }
@@ -1448,6 +1454,7 @@
     document.querySelectorAll("#handover-fieldset textarea").forEach(autoGrowTextarea);
     autoGrowTextarea(document.getElementById("f-reviewer-comments"));
     refreshTextLinks();
+    refreshCommentTools();
   }
 
   // Web addresses typed into a text box are shown as clickable links just below it
@@ -1457,10 +1464,12 @@
     var rc = document.getElementById("f-reviewer-comments");
     if (rc) boxes.push(rc);
     boxes.forEach(function(ta){
-      var holder = ta.nextElementSibling;
-      if (!holder || !holder.classList || !holder.classList.contains("text-links")) {
+      var tlKey = ta.id || ta.getAttribute("data-field-id");
+      var holder = ta.parentNode.querySelector('.text-links[data-for="' + tlKey + '"]');
+      if (!holder) {
         holder = document.createElement("div");
         holder.className = "text-links";
+        holder.setAttribute("data-for", tlKey);
         ta.parentNode.insertBefore(holder, ta.nextSibling);
       }
       var seen = {};
@@ -1505,6 +1514,66 @@
     var cleaned = ta.value.replace(/(?:\n\n)?— \S+@\S+ · [^\n]*\n?\s*$/, "");
     if (cleaned !== ta.value) { ta.value = cleaned; autoGrowTextarea(ta); }
   });
+
+  // Delete a comment you wrote (admins can delete any comment).
+  function parseCommentBlocks(text){
+    var blocks = [], m, re = /^— (\S+@\S+) · .*$/gm, marks = [];
+    while ((m = re.exec(text)) !== null) marks.push({ author: m[1].toLowerCase(), start: m.index, bodyStart: m.index + m[0].length });
+    if (marks.length === 0) { if (text.trim()) blocks.push({ author: "", start: 0, end: text.length, body: text.trim() }); return blocks; }
+    if (text.slice(0, marks[0].start).trim()) blocks.push({ author: "", start: 0, end: marks[0].start, body: text.slice(0, marks[0].start).trim() });
+    marks.forEach(function(mk, i){
+      var end = i + 1 < marks.length ? marks[i + 1].start : text.length;
+      var body = text.slice(mk.bodyStart, end).trim();
+      if (body) blocks.push({ author: mk.author, start: mk.start, end: end, body: body });
+    });
+    return blocks;
+  }
+  function refreshCommentTools(){
+    var boxes = [document.getElementById("f-reviewer-comments"), document.querySelector('textarea[data-field-id="generalcomment"]')];
+    boxes.forEach(function(ta){
+      if (!ta) return;
+      var tools = ta.parentNode.querySelector('.comment-tools[data-for="' + (ta.id || ta.getAttribute("data-field-id")) + '"]');
+      if (!tools) {
+        tools = document.createElement("div");
+        tools.className = "comment-tools";
+        tools.setAttribute("data-for", ta.id || ta.getAttribute("data-field-id"));
+        ta.parentNode.insertBefore(tools, ta.nextSibling);
+      }
+      tools.innerHTML = "";
+      if (ta.disabled || ta.readOnly || !currentEmail) return;
+      var me = currentEmail.toLowerCase(), isAdmin = (currentRole === "admin");
+      parseCommentBlocks(ta.value).forEach(function(b){
+        if (!(b.author === me || isAdmin)) return;
+        var row = document.createElement("div");
+        row.className = "comment-tool-row";
+        var label = document.createElement("span");
+        label.className = "ct-text";
+        label.textContent = (b.author && b.author !== me ? b.author + ": " : "Your comment: ") + b.body.replace(/\s+/g, " ").slice(0, 70);
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "Delete";
+        btn.addEventListener("click", function(){
+          if (!window.confirm("Delete this comment?")) return;
+          var cur = ta.value;
+          var cb = parseCommentBlocks(cur).filter(function(x){ return x.start === b.start && x.body === b.body; })[0];
+          if (!cb) return;
+          var next = (cur.slice(0, cb.start) + cur.slice(cb.end)).replace(/\n{3,}/g, "\n\n").trim();
+          ta.value = next;
+          autoGrowTextarea(ta);
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          refreshCommentTools();
+          showToast("Comment deleted");
+        });
+        row.appendChild(label);
+        row.appendChild(btn);
+        tools.appendChild(row);
+      });
+    });
+  }
+  var commentToolsTimer = null;
+  function scheduleCommentTools(){ clearTimeout(commentToolsTimer); commentToolsTimer = setTimeout(refreshCommentTools, 400); }
+  document.addEventListener("input", function(e){ if (isCommentBox(e.target)) scheduleCommentTools(); });
+  document.addEventListener("focusout", function(e){ if (isCommentBox(e.target)) setTimeout(refreshCommentTools, 50); });
 
   var textLinksTimer = null;
   function scheduleTextLinks(){ clearTimeout(textLinksTimer); textLinksTimer = setTimeout(refreshTextLinks, 400); }
