@@ -1473,6 +1473,39 @@
       }).join("");
     });
   }
+  // Comment boxes (Reviewer comments, General comments): each person's text sits under their own
+  // login email and time, so it is always clear who wrote what.
+  var COMMENT_HEADER_RE = /^— (\S+@\S+) · .*$/gm;
+  function isCommentBox(el){
+    return !!el && el.tagName === "TEXTAREA" && (el.id === "f-reviewer-comments" || el.getAttribute("data-field-id") === "generalcomment");
+  }
+  function lastCommentAuthor(text){
+    var m, last = "";
+    COMMENT_HEADER_RE.lastIndex = 0;
+    while ((m = COMMENT_HEADER_RE.exec(text)) !== null) last = m[1].toLowerCase();
+    return last;
+  }
+  function commentHeaderLine(){
+    var when = new Date().toLocaleString("en-GB", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+    return "— " + currentEmail + " · " + when;
+  }
+  document.addEventListener("focusin", function(e){
+    var ta = e.target;
+    if (!isCommentBox(ta) || ta.disabled || ta.readOnly || !currentEmail) return;
+    if (lastCommentAuthor(ta.value) === currentEmail.toLowerCase()) return;
+    var base = ta.value.replace(/\s+$/, "");
+    ta.value = (base ? base + "\n\n" : "") + commentHeaderLine() + "\n";
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    autoGrowTextarea(ta);
+  });
+  document.addEventListener("focusout", function(e){
+    var ta = e.target;
+    if (!isCommentBox(ta) || ta.disabled || ta.readOnly) return;
+    // Left the box without writing anything under the new header: remove the empty header again.
+    var cleaned = ta.value.replace(/(?:\n\n)?— \S+@\S+ · [^\n]*\n?\s*$/, "");
+    if (cleaned !== ta.value) { ta.value = cleaned; autoGrowTextarea(ta); }
+  });
+
   var textLinksTimer = null;
   function scheduleTextLinks(){ clearTimeout(textLinksTimer); textLinksTimer = setTimeout(refreshTextLinks, 400); }
 
