@@ -696,7 +696,8 @@
       {id:"lastinsp", label:"Last Inspection Findings"},
       {id:"recentfindings", label:"Recent Findings"},
       {id:"templogs", label:"Temperature Logs Compliance"},
-      {id:"cleaning", label:"Time Control Plan"} ]},
+      {id:"cleaning", label:"Time Control Plan"},
+      {id:"pestmgmt", label:"Pest Management", hint:"Current pest activity, last treatment and inspection dates, pest control vendor contact and schedule, open actions, and where the logs are kept."} ]},
     { num:"06", title:"Provisions, Ordering, Missing Items & Quality Issues", fields:[
       {id:"erp", label:"ERP Log-In"},
       {id:"stockissues", label:"Current Stock Issues"},
@@ -718,7 +719,16 @@
     { num:"10", title:"Upcoming & Planning", fields:[
       {id:"focusareas", label:"Operational Focus Areas"},
       {id:"bimini", label:"Special Events, Charters, Holidays & Celebrations"},
-      {id:"ktmatrix", label:"KT Matrix / Support & KT Special Events"} ]}
+      {id:"ktmatrix", label:"KT Matrix / Support & KT Special Events"} ]},
+    { num:"11", title:"Key Onboard Leadership", fields:[
+      {id:"lead_fbd", label:"F&B Director", hint:"Name, working style and current priorities."},
+      {id:"lead_gm", label:"General Manager", hint:"Name, working style and current priorities."},
+      {id:"lead_rom", label:"ROM", hint:"Name, working style and current priorities."},
+      {id:"lead_other", label:"Other Leaders You Report To or Work With", hint:"Name, position, and the key meetings or contacts with each."} ]},
+    { num:"12", title:"Tablet / Laptop Inventory", fields:[
+      {id:"inv_tablets", label:"Tablets — Current Onboard Count", hint:"Total, working, damaged or missing, and where they are stored. Counted before departure."},
+      {id:"inv_laptops", label:"Laptops — Current Onboard Count", hint:"Total, working, damaged or missing, and where they are kept. Counted before departure."},
+      {id:"inv_countedby", label:"Counted By (Name & Date)", hint:"Who did the count and when. Note any discrepancies."} ]}
   ];
 
   // Culinary Admin handover: shown instead of the standard points when the
@@ -1488,8 +1498,8 @@
         ta.parentNode.insertBefore(holder, ta.nextSibling);
       }
       var seen = {};
-      var urls = (String(ta.value || "").match(/https?:\/\/[^\s<>"']+/gi) || []).map(function(u){
-        return u.replace(/[.,;:!?)\]]+$/, "");
+      var urls = (String(ta.value || "").match(/(?:https?:\/\/|www\.)[^\s<>"']+/gi) || []).map(function(u){
+        return normalizeLinkUrl(trimUrlEnd(u)) || trimUrlEnd(u);
       }).filter(function(u){ if (seen[u]) return false; seen[u] = true; return true; });
       holder.innerHTML = urls.map(function(u){
         var label = u.length > 70 ? u.slice(0, 67) + "…" : u;
@@ -1744,7 +1754,7 @@
       var imgPreview = ''; // No thumbnails: attachments are only rendered after an explicit click.
 
       if (a.kind === "link") {
-        return '<div class="field-attach-chip">🔗 <a href="' + escapeHtml(a.url).replace(/"/g, "%22") + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
+        return '<div class="field-attach-chip">🔗 <a href="' + escapeHtml(fixedHref(a.url)).replace(/"/g, "%22") + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(a.name) + '</a>' + removeLink + '</div>';
       }
 
       return '<div class="field-attach-chip">' + imgPreview + '📎 <a href="#" data-open-field="' + fieldId + '" data-open-idx="' + idx + '">' + escapeHtml(a.name) + '</a>' + removeLink + '<div class="print-attachment-image" data-print-field="' + escapeHtml(fieldId) + '" data-print-idx="' + idx + '"></div></div>';
@@ -2058,7 +2068,7 @@
 
       if (f.kind === "link") {
         var editLink = locked ? "" : ' · <a href="#" data-edit-link-idx="' + idx + '" class="attachment-edit-link">edit</a>';
-        return '<div class="attachment-row">🔗 <a href="' + escapeHtml(f.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(f.name) + '</a>' +
+        return '<div class="attachment-row">🔗 <a href="' + escapeHtml(fixedHref(f.url)) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(f.name) + '</a>' +
           editLink + removeLink + '</div>';
       }
 
@@ -2307,13 +2317,28 @@
   function normalizeLinkUrl(raw){
     var u = String(raw || "").trim();
     if (!u) return "";
-    if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = "https://" + u;
+    // Repair typical paste mistakes: "https://https://...", "http//...", "https:/..."
+    var first = u.match(/^(https?):?\/{0,2}/i);
+    if (first) {
+      var scheme = first[1].toLowerCase(), rest = u, m;
+      while ((m = rest.match(/^https?:?\/{0,2}/i)) && m[0].length > 0 && /^[^\s\/]/.test(rest.slice(m[0].length))) rest = rest.slice(m[0].length);
+      u = scheme + "://" + rest;
+    } else if (/^\\\\|^[a-z]:[\\\/]/i.test(u)) {
+      return ""; // a file on a computer or network drive: nobody else can open it
+    } else if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = "https://" + u;
     try {
       var parsed = new URL(u);
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+      if (parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost") return "";
       return parsed.href;
     } catch (e) { return ""; }
   }
+  function trimUrlEnd(u){
+    u = u.replace(/[.,;:!?\]]+$/, "");
+    while (u.slice(-1) === ")" && (u.split(")").length - 1) > (u.split("(").length - 1)) u = u.slice(0, -1).replace(/[.,;:!?\]]+$/, "");
+    return u;
+  }
+  function fixedHref(url){ return normalizeLinkUrl(url) || String(url || ""); }
 
   (function wireFileLinks(){
     var form = document.getElementById("link-form");
