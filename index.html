@@ -725,8 +725,11 @@
       {id:"focusareas", label:"Operational Focus Areas"},
       {id:"bimini", label:"Special Events, Charters, Holidays & Celebrations"},
       {id:"ktmatrix", label:"KT Matrix / Support & KT Special Events"} ]},
-    { num:"12", title:"Inventory", single:true, fields:[
-      {id:"inv_tablets", label:"Tablets / Laptops — Current Onboard Count", hint:"Number of tablets and laptops onboard: total, working, damaged or missing, and where they are stored. Count them before departure."} ]}
+    { num:"12", title:"Inventory", fields:[
+      {id:"inv_tablets", label:"Tablets / Laptops — Current Onboard Count", hint:"Number of tablets and laptops onboard: total, working, damaged or missing, and where they are stored. Count them before departure."},
+      {id:"inv_equipstatus", label:"Current Equipment Inventory Status", hint:"What equipment is onboard and its condition: complete, missing, damaged or in repair."},
+      {id:"inv_equiporder", label:"Future Equipment Ordering", hint:"Equipment still to be ordered: item, quantity, reason, order status and expected delivery."},
+      {id:"inv_lastcount", label:"Last Equipment Inventory", hint:"Date of the last full equipment count, who did it, and the result or open discrepancies."} ]}
   ];
 
   // Culinary Admin handover: shown instead of the standard points when the
