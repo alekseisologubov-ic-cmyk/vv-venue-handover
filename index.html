@@ -379,7 +379,7 @@
   .attachment-row,.field-attach-chip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .attachment-file-icon{width:34px;height:34px;border-radius:6px;background:#EFE8F2;display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;font-size:17px;}
   .attachment-row a,.field-attach-chip a{overflow-wrap:anywhere;}
-  .attachment-row img,.field-attach-chip img{display:none!important;}
+  .attachment-row > img,.field-attach-chip > img{display:none!important;}
   [data-view]{ display:none; }
   [data-view].active{ display:block; }
 
@@ -416,6 +416,7 @@
   .print-attachment-image { page-break-inside:avoid; break-inside:avoid; }
   @media print {
     .print-attachment-image { display:block !important; }
+    .print-attachment-image img { display:block !important; }
     body { background: #fff !important; color: #000 !important; }
     header.band, footer.band, .back-link, .sync-bar, .venue-picker, .attachments-upload-row, .field-attach-row, .attachment-remove-link, .field-attach-chip-remove, .config-banner, .admin-pill, .status-toast, .attachment-modal { display: none !important; }
     main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
