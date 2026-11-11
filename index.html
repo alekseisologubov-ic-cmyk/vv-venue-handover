@@ -671,64 +671,62 @@
   "use strict";
 
   var SECTIONS = [
-    { num:"01", title:"Operational Overview", fields:[
+    { num:"01", title:"Key Onboard Leadership", fields:[
+      {id:"lead_fbd", label:"F&B Director", hint:"Name, working style and current priorities."},
+      {id:"lead_gm", label:"General Manager", hint:"Name, working style and current priorities."},
+      {id:"lead_rom", label:"ROM", hint:"Name, working style and current priorities."},
+      {id:"lead_other", label:"Other Leaders You Report To or Work With", hint:"Name, position, and the key meetings or contacts with each."} ]},
+    { num:"02", title:"Operational Overview", fields:[
       {id:"opoverview", label:"Current Operational Overview"},
       {id:"challenges", label:"Current Challenges"},
       {id:"upcomingevents", label:"Upcoming Events / High Volume Sailings"} ]},
-    { num:"02", title:"Financial Operations", fields:[
+    { num:"03", title:"Financial Operations", fields:[
       {id:"foodcost", label:"Food Cost"},
       {id:"treat", label:"Treat Yourself"},
       {id:"overtime", label:"Overtime"} ]},
-    { num:"03", title:"Manning & Structure", fields:[
+    { num:"04", title:"Manning & Structure", fields:[
       {id:"manning", label:"Current Team Manning"},
       {id:"keypos", label:"Key Positions"},
       {id:"perfnotes", label:"Performance Notes"},
       {id:"signoff", label:"Crew — Next 2 Weeks Sign-Off, Evaluations & Goal Settings"},
       {id:"succession", label:"Succession / Development Notes"} ]},
-    { num:"04", title:"Training", fields:[
+    { num:"05", title:"Training", fields:[
       {id:"recipe", label:"Recipe Training Status"},
       {id:"publichealthtraining", label:"Public Health Training Schedule & Status"},
       {id:"safetytraining", label:"Safety Training Schedule"},
       {id:"equipmenttraining", label:"Equipment Training"},
       {id:"newhiretraining", label:"New Hires Training"},
       {id:"stationelearning", label:"E-Learning Status — Station"} ]},
-    { num:"05", title:"Public Health", fields:[
+    { num:"06", title:"Public Health", fields:[
       {id:"lastinsp", label:"Last Inspection Findings"},
       {id:"recentfindings", label:"Recent Findings"},
       {id:"templogs", label:"Temperature Logs Compliance"},
       {id:"cleaning", label:"Time Control Plan"},
       {id:"pestmgmt", label:"Pest Management", hint:"Current pest activity, last treatment and inspection dates, pest control vendor contact and schedule, open actions, and where the logs are kept."} ]},
-    { num:"06", title:"Provisions, Ordering, Missing Items & Quality Issues", fields:[
+    { num:"07", title:"Provisions, Ordering, Missing Items & Quality Issues", fields:[
       {id:"erp", label:"ERP Log-In"},
       {id:"stockissues", label:"Current Stock Issues"},
       {id:"missingitems", label:"Missing Items"},
       {id:"substitutions", label:"Substitutions in Use"},
       {id:"quality", label:"Quality Concerns (Supplier / Product)"} ]},
-    { num:"07", title:"Equipment & Maintenance", fields:[
+    { num:"08", title:"Equipment & Maintenance", fields:[
       {id:"equipstatus", label:"Critical Equipment Status"},
       {id:"aims", label:"Open AIMS / Pending Repairs"},
       {id:"replacement", label:"Equipment Replacement Needs"} ]},
-    { num:"08", title:"Safety Responsibilities", fields:[
+    { num:"09", title:"Safety Responsibilities", fields:[
       {id:"firesafety", label:"Fire Safety Training Schedules"},
       {id:"safetyactions", label:"Outstanding Safety Actions"},
       {id:"safetyconcerns", label:"Crew Safety Concerns"},
       {id:"nearmiss", label:"Near Miss Reports"} ]},
-    { num:"09", title:"Performance & Ratings", fields:[
+    { num:"10", title:"Performance & Ratings", fields:[
       {id:"guestscores", label:"Guest Satisfaction Scores"},
       {id:"improvement", label:"Improvement Areas"} ]},
-    { num:"10", title:"Upcoming & Planning", fields:[
+    { num:"11", title:"Upcoming & Planning", fields:[
       {id:"focusareas", label:"Operational Focus Areas"},
       {id:"bimini", label:"Special Events, Charters, Holidays & Celebrations"},
       {id:"ktmatrix", label:"KT Matrix / Support & KT Special Events"} ]},
-    { num:"11", title:"Key Onboard Leadership", fields:[
-      {id:"lead_fbd", label:"F&B Director", hint:"Name, working style and current priorities."},
-      {id:"lead_gm", label:"General Manager", hint:"Name, working style and current priorities."},
-      {id:"lead_rom", label:"ROM", hint:"Name, working style and current priorities."},
-      {id:"lead_other", label:"Other Leaders You Report To or Work With", hint:"Name, position, and the key meetings or contacts with each."} ]},
-    { num:"12", title:"Tablet / Laptop Inventory", fields:[
-      {id:"inv_tablets", label:"Tablets — Current Onboard Count", hint:"Total, working, damaged or missing, and where they are stored. Counted before departure."},
-      {id:"inv_laptops", label:"Laptops — Current Onboard Count", hint:"Total, working, damaged or missing, and where they are kept. Counted before departure."},
-      {id:"inv_countedby", label:"Counted By (Name & Date)", hint:"Who did the count and when. Note any discrepancies."} ]}
+    { num:"12", title:"Inventory", single:true, fields:[
+      {id:"inv_tablets", label:"Tablets / Laptops — Current Onboard Count", hint:"Number of tablets and laptops onboard: total, working, damaged or missing, and where they are stored. Count them before departure."} ]}
   ];
 
   // Culinary Admin handover: shown instead of the standard points when the
