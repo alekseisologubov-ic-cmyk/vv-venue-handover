@@ -246,6 +246,7 @@
   .link-form input{ font:inherit; font-size:14px; padding:8px 10px; border:1px solid #CDBFD6; border-radius:6px; background:#fff; }
   .link-form-actions{ display:flex; gap:8px; }
   .attachment-edit-link{ color:var(--vv-squid-ink) !important; font-weight:400 !important; font-size:12px; }
+  .print-signatures{ display:none; }
   .attachments-hint{ font-size:12px; color:var(--vv-gray-mid); }
   .attachments-error{ margin:10px 0 0; font-size:12.5px; color:var(--vv-red-deep); }
   .attachment-row{ font-size:13.5px; padding:6px 0; border-bottom:1px solid #F0EAF4; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
@@ -415,11 +416,22 @@
   .print-attachment-image img { display:block; max-width:100%; max-height:560px; width:auto; height:auto; object-fit:contain; border:1px solid #ddd; border-radius:4px; margin:6px 0 10px; page-break-inside:avoid; break-inside:avoid; }
   .print-attachment-image { page-break-inside:avoid; break-inside:avoid; }
   @media print {
+    .signout-btn, body.authenticated .signout-btn { display:none !important; }
     .print-attachment-image { display:block !important; }
     .print-attachment-image img { display:block !important; }
     body { background: #fff !important; color: #000 !important; }
     header.band, footer.band, .back-link, .sync-bar, .venue-picker, .attachments-upload-row, .field-attach-row, .attachment-remove-link, .field-attach-chip-remove, .config-banner, .admin-pill, .status-toast, .attachment-modal { display: none !important; }
     main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+    .print-signatures { display:block !important; margin-top:22px; break-inside:avoid; page-break-inside:avoid; }
+    .print-signatures .sig-title { font-size:15px; text-transform:uppercase; letter-spacing:0.12em; margin:0 0 10px; padding-bottom:4px; border-bottom:2px solid #000; }
+    .print-signatures .sig-row { display:flex; gap:36px; margin-bottom:18px; }
+    .print-signatures .sig-block { flex:1; }
+    .print-signatures .sig-fb { flex:0 0 calc(50% - 18px); }
+    .print-signatures .sig-role { font-weight:800; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px; }
+    .print-signatures .sig-line-item { display:flex; align-items:flex-end; gap:8px; font-size:12px; margin-top:8px; min-height:18px; }
+    .print-signatures .sig-label { flex:0 0 62px; color:#444; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; }
+    .print-signatures .sig-value { flex:1; border-bottom:1px solid #000; min-height:16px; padding-bottom:1px; }
+    .print-signatures .sig-sign { margin-top:26px; }
     .cards-grid, .cards-grid.single { display:block !important; }
     .cards-grid > .card { display:block !important; width:100% !important; margin:0 0 10px 0 !important; break-inside:avoid; }
     .card textarea, .attachments-card textarea { width:100% !important; box-sizing:border-box; height:auto !important; min-height:0 !important; field-sizing:content; overflow:visible !important; }
@@ -622,6 +634,33 @@
       <!-- Hidden legacy field preserves any previously saved Treat Yourself 2 text without showing a duplicate card. -->
       <textarea data-field-id="treatyourself2" aria-hidden="true" tabindex="-1" style="display:none !important;"></textarea>
     </fieldset>
+    <section class="print-signatures" id="print-signatures" aria-hidden="true">
+      <h2 class="sig-title">Signatures</h2>
+      <div class="sig-row">
+        <div class="sig-block">
+          <div class="sig-role">Outgoing Chef</div>
+          <div class="sig-line-item"><span class="sig-label">Name</span><span class="sig-value" id="sig-out-name"></span></div>
+          <div class="sig-line-item"><span class="sig-label">Position</span><span class="sig-value" id="sig-out-pos"></span></div>
+          <div class="sig-line-item sig-sign"><span class="sig-label">Signature</span><span class="sig-value"></span></div>
+          <div class="sig-line-item"><span class="sig-label">Date</span><span class="sig-value"></span></div>
+        </div>
+        <div class="sig-block">
+          <div class="sig-role">Incoming Chef</div>
+          <div class="sig-line-item"><span class="sig-label">Name</span><span class="sig-value" id="sig-in-name"></span></div>
+          <div class="sig-line-item"><span class="sig-label">Position</span><span class="sig-value" id="sig-in-pos"></span></div>
+          <div class="sig-line-item sig-sign"><span class="sig-label">Signature</span><span class="sig-value"></span></div>
+          <div class="sig-line-item"><span class="sig-label">Date</span><span class="sig-value"></span></div>
+        </div>
+      </div>
+      <div class="sig-row">
+        <div class="sig-block sig-fb">
+          <div class="sig-role">F&amp;B Director</div>
+          <div class="sig-line-item"><span class="sig-label">Name</span><span class="sig-value"></span></div>
+          <div class="sig-line-item sig-sign"><span class="sig-label">Signature</span><span class="sig-value"></span></div>
+          <div class="sig-line-item"><span class="sig-label">Date</span><span class="sig-value"></span></div>
+        </div>
+      </div>
+    </section>
   </main>
   <footer class="band stripe-black">
     <div class="left"><span class="pill">Confidential</span><span>Internal use only — not for distribution</span></div>
@@ -1781,6 +1820,14 @@
       prepareAttachmentImagesForPrint().catch(function(err){ console.warn("Print image preparation failed:", err); });
     }, 600);
   }
+  function fillPrintSignatures(){
+    function txt(id){ var el = document.getElementById(id); return el ? String(el.value || "").trim() : ""; }
+    function posText(id){ var el = document.getElementById(id); if (!el || !el.value) return ""; var o = el.options && el.options[el.selectedIndex]; return o ? o.text.trim() : String(el.value).trim(); }
+    function set(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; }
+    set("sig-out-name", txt("f-outgoing-name")); set("sig-out-pos", posText("f-outgoing-pos"));
+    set("sig-in-name", txt("f-incoming-name")); set("sig-in-pos", posText("f-incoming-pos"));
+  }
+  window.addEventListener("beforeprint", fillPrintSignatures);
   window.addEventListener("beforeprint", function(){
     // Images are normally loaded already; this only fills any that are still missing.
     var missing = Array.prototype.some.call(document.querySelectorAll(".print-attachment-image"), function(el){ return !el.firstChild; });
